@@ -1,0 +1,599 @@
+/*
+ * Copyright 2016-2020 The Polypheny Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+buildscript {
+    repositories {
+        mavenCentral()
+        jcenter()
+        maven { url 'https://plugins.gradle.org/m2/' }
+        maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+    }
+
+    dependencies {
+        // Freemaker FMPP (http://fmpp.sourceforge.net/, Apache 2.0)
+        classpath group: 'net.sourceforge.fmpp', name: 'fmpp', version: '0.9.16'
+
+        // JavaCC (https://github.com/johnmartel/javaccPlugin, MIT License)
+        classpath group: 'ca.coglinc', name: 'javacc-gradle-plugin', version: '2.4.0'
+
+        // Shadowing; used to make a fat jar (https://github.com/johnrengelman/shadow, Apache 2.0)
+        classpath group: 'com.github.jengelman.gradle.plugins', name: 'shadow', version: '5.0.0'
+
+        // Lombok (https://github.com/franzbecker/gradle-lombok, Apache 2.0)
+        classpath group: 'io.franzbecker', name: 'gradle-lombok', version: '3.1.0'
+
+        // SonarQube (https://plugins.gradle.org/plugin/org.sonarqube, GNU LGPL 3)
+        classpath group: 'org.sonarsource.scanner.gradle', name: 'sonarqube-gradle-plugin', version: '2.7.1'
+
+        // Packr (https://github.com/hendraanggrian/packr-gradle-plugin, Apache 2.0)
+        classpath group: 'com.hendraanggrian', name: 'packr-gradle-plugin', version: '0.2'
+
+        // The Badass Runtime Plugin (https://github.com/beryx/badass-runtime-plugin/, Apache 2.0)
+        classpath group: 'gradle.plugin.org.beryx', name: 'badass-runtime-plugin', version: '1.3.1'
+
+        // Gradle Download Task (https://github.com/michel-kraemer/gradle-download-task, Apache 2.0)
+        classpath group: 'de.undercouch', name: 'gradle-download-task', version: '3.4.3'
+    }
+
+    ant.taskdef(name: 'fmpp', classname: 'fmpp.tools.AntTask', classpath: buildscript.configurations.classpath.asPath)
+}
+
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+
+apply plugin: 'idea'
+apply plugin: 'java'
+apply plugin: 'maven'
+apply plugin: 'ca.coglinc.javacc'
+apply plugin: 'com.hendraanggrian.packr'
+apply plugin: 'de.undercouch.download'
+apply plugin: 'io.franzbecker.gradle-lombok'
+apply plugin: 'org.beryx.runtime'
+apply plugin: 'org.sonarqube'
+
+
+compileJava.options.encoding = 'UTF-8'
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+
+rootProject.version_build = rootProject.hasProperty('version_build') && !rootProject.property('version_build').toString().trim().isEmpty() ? rootProject.property('version_build').toString().trim().toLowerCase() : ''
+version = "${rootProject.version_major}.${rootProject.version_minor}.${rootProject.version_patch}" + (rootProject.hasProperty('isRelease') ? '' : '-SNAPSHOT')
+
+
+configurations {
+    fmppTemplates { transitive = false }
+
+    pdbModuleCompile.extendsFrom compile
+    pdbModuleCompileOnly.extendsFrom pdbModuleCompile
+    standaloneCompile.extendsFrom compile
+    standaloneCompileOnly.extendsFrom standaloneCompile
+
+    compileClasspath.extendsFrom compileOnly, pdbModuleCompileOnly, standaloneCompileOnly
+    testCompileClasspath.extendsFrom testCompileOnly, pdbModuleCompileOnly, standaloneCompileOnly
+}
+
+
+lombok {
+    // https://projectlombok.org/
+    version = '1.18.10'
+    sha256 = '' // skip verifyLombok task
+}
+
+
+def calciteVersion = '1.19.0' /* KEEP THIS VERSION */
+def avaticaVersion = '1.16.0'
+def log4jVersion = '2.12.1'
+
+
+dependencies {
+    //
+    // ///// //// /// // /
+    // POLYPHENY-DB MODULE
+
+    //
+    // ///// //// /// // /
+    // STANDALONE DDBMS
+    // Apache Calcite Avatica (Apache 2.0)
+    standaloneCompile group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion
+    // Apache Calcite (Apache 2.0)
+    standaloneCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
+    standaloneCompile group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
+    // HSQLDB (BSD)
+    standaloneCompile group: 'org.hsqldb', name: 'hsqldb', version: '2.5.0'
+    // Log4j (Apache 2.0)
+    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4jVersion
+    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4jVersion
+    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-1.2-api', version: log4jVersion
+    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-api', version: log4jVersion
+    // CLI parsing (Apache 2.0)
+    standaloneCompile group: 'com.github.rvesse', name: 'airline', version: '2.7.2'
+
+    //
+    // ///// //// /// // /
+    // COMPILE (Required for both runtime environments)
+    //
+    // Apache Commons (Apache 2.0)
+    compile group: 'commons-transaction', name: 'commons-transaction', version: '1.2'
+    compile group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
+    compile group: 'commons-codec', name: 'commons-codec', version: '1.13'
+    // Google GUAVA (Apache 2.0)
+    compile group: 'com.google.guava', name: 'guava', version: '28.1-jre'
+    // Byte Units (Apache 2.0)
+    compile group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
+    // Cluster Management, JGroups (Apache 2.0)
+    compile group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
+    // Metrics, Micrometer Application Metrics (Apache 2.0)
+    compile group: 'io.micrometer', name: 'micrometer-core', version: '1.3.1'
+    compile group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.3.1'
+    compile group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.3.1'
+    compile group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.3.1'
+    // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
+    compile group: 'com.typesafe', name: 'config', version: '1.4.0'
+
+
+    //
+    // ///// //// /// // /
+    // TESTING (Eclipse Public License 1.0)
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    // Apache Calcite Avatica (Apache 2.0)
+    testCompile group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
+    // Apache Calcite (Apache 2.0)
+    testCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
+    testCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
+    testCompile group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
+    testCompile group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion, classifier: 'tests'
+
+    //
+    // ///// //// /// // /
+    // Freemarker Template Sources, Apache Calcite (Apache 2.0)
+    fmppTemplates group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
+
+    //
+    // ///// //// /// // /
+    // JAVACC (BSD 2-clause)
+    javacc group: 'net.java.dev.javacc', name: 'javacc', version: '4.0' /* KEEP THIS VERSION */
+}
+
+
+def resourcesSrcDir = "src/main/resources"
+def classesDir = "${project.buildDir}/classes"
+def distributionsDir = "${project.buildDir}/distributions"
+def docsDir = "${project.buildDir}/docs"
+def extractedDir = "${project.buildDir}/extracted"
+def generatedDir = "${project.buildDir}/generated"
+def resourcesBuildDir = "${project.buildDir}/resources"
+
+
+task fmpp(group: 'javacc') {
+    inputs.files(fileTree("${extractedDir}/main/resources/codegen/templates"), file("${resourcesSrcDir}/codegen/config.fmpp"))
+    outputs.dir(file("${generatedDir}/main/fmpp"))
+
+    doLast {
+        copy {
+            from zipTree(configurations.fmppTemplates.singleFile).matching {
+                include 'codegen/**'
+            }
+            into "${extractedDir}/main/resources/"
+        }
+
+        ant.fmpp configuration: "${resourcesSrcDir}/codegen/config.fmpp", sourceRoot: "${extractedDir}/main/resources/codegen/templates", outputRoot: "${generatedDir}/main/fmpp"
+    }
+}
+
+
+compileJavacc {
+    dependsOn fmpp
+    inputDirectory = file("${generatedDir}/main/fmpp/javacc")
+    outputDirectory = file("${generatedDir}/main/javacc")
+    arguments = [lookahead: '2']
+}
+
+
+jjdoc {
+    dependsOn fmpp
+    inputDirectory = file("${generatedDir}/main/fmpp/javacc")
+    outputDirectory = file("${docsDir}/jjdoc")
+    arguments = [text: 'false']
+}
+
+
+sourceSets {
+    main {
+        java {
+            srcDir "${generatedDir}/main/fmpp"
+            srcDir "${generatedDir}/main/javacc"
+        }
+    }
+}
+
+
+jar {
+    manifest {
+        attributes 'Manifest-Version': '1.0'
+        attributes 'Copyright': 'Databases and Information Systems Group, Department Mathematics and Computer Science, University of Basel, Switzerland'
+        attributes 'Group': rootProject.group
+        attributes 'Name': rootProject.name
+        attributes 'Version': rootProject.version
+        attributes 'Build': rootProject.version_build
+    }
+
+    exclude 'log4j2.properties'
+}
+
+
+// Standalone JAR which bundles all dependencies (except the once required only for the "Polypheny-DB" context)
+// DO NOT DISTRIBUTE THIS BUNDLE
+task standaloneJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar, group: 'shadow', dependsOn: jar) {
+    description = 'Builds a standalone executable jar which includes all required dependencies.'
+    classifier = 'standalone'
+
+    manifest {
+        inheritFrom jar.manifest
+        attributes 'Main-Class': project.properties['mainClass']
+        attributes 'Class-Path': '../config/ ../plugins/ ./config/ ./plugins/'
+    }
+
+    from(project.convention.getPlugin(JavaPluginConvention).sourceSets.main.output)
+
+    configurations = [project.configurations.runtime]
+    configurations.addAll([project.configurations.standaloneCompile])
+
+    exclude 'META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
+
+// Module JAR which bundles all required dependencies to run in the "Polypheny-DB" context
+// DO NOT DISTRIBUTE THIS BUNDLE
+task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar, group: 'shadow', dependsOn: jar) {
+    description = 'Builds a Polypheny-DB Module jar which includes all dependencies required for running it in the Polypheny-DB context.'
+    classifier = 'module'
+
+    manifest {
+        inheritFrom jar.manifest
+        attributes 'Polypheny-Artifact-Name': rootProject.name
+        attributes 'Polypheny-Module-Name': rootProject.name
+        attributes 'Polypheny-Module-Main': project.properties['moduleMainClass']
+        attributes 'Polypheny-Module-Type': 'component'
+    }
+
+    from(project.convention.getPlugin(JavaPluginConvention).sourceSets.main.output)
+
+    configurations = [project.configurations.runtime]
+    configurations.addAll([project.configurations.pdbModuleCompile])
+
+    exclude 'META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    exclude 'log4j2.properties'
+}
+
+
+test {
+    exclude 'ch/unibas/dmi/dbis/polyphenydb/ddu/standalone/StandaloneTest.class'
+}
+
+
+task delombok(type: io.franzbecker.gradle.lombok.task.DelombokTask, group: 'documentation', dependsOn: compileJava) {
+    ext.outputDir = file("${project.buildDir}/delombok")
+    outputs.dir(outputDir)
+    sourceSets.main.java.srcDirs.each {
+        inputs.dir(it)
+        args(it, '-d', outputDir)
+    }
+}
+
+
+javadoc {
+    dependsOn delombok
+    source = delombok.outputDir
+    failOnError = false
+    exclude '**/Parser.jj'  // Exclude the generated parser
+    exclude '**/ParseException.java', '**/SimpleCharStream.java', '**/SqlParserImpl.java', '**/SqlParserImplConstants.java', '**/SqlParserImplTokenManager.java', '**/Token.java', '**/TokenMgrError.java'  // Exclude the generated parser
+}
+
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
+
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+
+artifacts {
+    archives jar // regular jar containing only the source from this source set
+
+    archives sourcesJar // jar file containing the source files
+    archives javadocJar // jar file containing the java doc files
+}
+
+
+// Check https://github.com/AdoptOpenJDK/openjdk8-binaries/releases
+// jdk8u${jdk8Update}-b${jdk8Build}
+def jdk8Update = '232'
+def jdk8Build = '09'
+
+def adoptOpenJdk8FolderVersionString = "jdk8u${jdk8Update}-b${jdk8Build}"
+def adoptOpenJdk8FileVersionString = "8u${jdk8Update}b${jdk8Build}"
+
+def standaloneJdk8Linux64 = "${rootProject.name}-${rootProject.version}-standalone-jdk8-linux64"
+def standaloneJdk8Windows64 = "${rootProject.name}-${rootProject.version}-standalone-jdk8-windows64"
+
+task jdk8_downloadJdkLinux64tar(type: Download) {
+    def jdkLinux = file("${buildDir}/jdks/jdk-8-linux64.tar.gz")
+    outputs.file jdkLinux
+
+    src "https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/${adoptOpenJdk8FolderVersionString}/OpenJDK8U-jdk_x64_linux_hotspot_${adoptOpenJdk8FileVersionString}.tar.gz"
+    dest jdkLinux
+    overwrite false
+}
+
+task jdk8_downloadJdkLinux64(type: Zip, dependsOn: jdk8_downloadJdkLinux64tar) {
+    def jdkLinux = file("${buildDir}/jdks/jdk-8-linux64.zip")
+    outputs.file jdkLinux
+
+    from tarTree(jdk8_downloadJdkLinux64tar.dest)
+    archiveFile.set jdkLinux
+}
+
+task jdk8_downloadJdkWindows64(type: Download) {
+    def jdkWindows = file("${buildDir}/jdks/jdk-8-windows64.zip")
+    outputs.file jdkWindows
+
+    src "https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/${adoptOpenJdk8FolderVersionString}/OpenJDK8U-jdk_x64_windows_hotspot_${adoptOpenJdk8FileVersionString}.zip"
+    dest jdkWindows
+    overwrite false
+}
+
+// For JDK 8
+packr {
+    outputDirectory "${distributionsDir}"
+    //classpath "${buildDir}/libs/${standaloneJar.archiveFile.orNull.asFile.name}"
+    classpath "${buildDir}/libs/${jar.archiveFile.orNull.asFile.name}"
+    if (file("${resourcesSrcDir}/log4j2.properties").exists())
+        resources "${resourcesSrcDir}/log4j2.properties" // log4j2.properties is excluded by the jar task, thus we need to include it again
+
+    mainClass project.properties['mainClass']
+    vmArgs 'Xmx6g', 'Djava.net.preferIPv4Stack=true', 'Dcom.sun.management.jmxremote=true', 'Dcom.sun.management.jmxremote.port=7091', 'Dcom.sun.management.jmxremote.authenticate=false', 'Dcom.sun.management.jmxremote.ssl=false'
+    minimizeJre "${resourcesSrcDir}/minimize/soft"// null = disable
+
+    configureLinux64 {
+        name "${standaloneJdk8Linux64}/bin" // move the stuff into ./bin to make it script compatible with jdk11 packaging
+        jdk "${buildDir}/jdks/jdk-8-linux64.zip"
+        vmArgs[]
+    }
+    configureWindows64 {
+        name "${standaloneJdk8Windows64}/bin" // move the stuff into ./bin to make it script compatible with jdk11 packaging
+        jdk "${buildDir}/jdks/jdk-8-windows64.zip"
+        vmArgs[]
+    }
+}
+
+packLinux64.dependsOn jar, jdk8_downloadJdkLinux64
+packLinux64.doFirst {
+    // Add all required dependencies to the classpath of this pack task
+    Set dependencies = []
+    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneCompile]
+    standaloneConfigurations.stream().each { it.each { dependencies.add(it) } }
+    dependencies.each { classpath += file(it) }
+}
+packWindows64.dependsOn jar, jdk8_downloadJdkWindows64
+packWindows64.doFirst {
+    // Add all required dependencies to the classpath of this pack task
+    Set dependencies = []
+    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneCompile]
+    standaloneConfigurations.stream().each { it.each { dependencies.add(it) } }
+    dependencies.each { classpath += file(it) }
+}
+packWindows64.doLast {
+    // move all jar files from ./bin to ./lib
+    ant.move(todir: "${distributionsDir}/${standaloneJdk8Windows64}/lib") {
+        fileset(dir: "${distributionsDir}/${standaloneJdk8Windows64}/bin") {
+            include(name: '*.jar')
+        }
+    }
+
+    // fix the entries for classPath in config.json
+    def configFile = file("${distributionsDir}/${standaloneJdk8Windows64}/bin/config.json")
+    def config = new groovy.json.JsonSlurper().parse(configFile)
+    config.classPath = config.classPath.collect { it.endsWith('.jar') ? (it.startsWith('../lib/') ? it : "../lib/${it}") : it }
+    config.classPath += "log4j2.properties" // add the log4j2.properties file to the classPath
+    configFile.write(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(config)))
+}
+
+task jdk8_zipLinux64Package(type: Zip, group: 'distribution', dependsOn: packLinux64) {
+    from(distributionsDir) {
+        include "${standaloneJdk8Linux64}/**"
+    }
+    archiveFile.set file("${distributionsDir}/${standaloneJdk8Linux64}.zip")
+}
+
+task jdk8_zipWindows64Package(type: Zip, group: 'distribution', dependsOn: packWindows64) {
+    from(distributionsDir) {
+        include "${standaloneJdk8Windows64}/**"
+    }
+    archiveFile.set file("${distributionsDir}/${standaloneJdk8Windows64}.zip")
+}
+
+task jdk8_zipAll(group: 'distribution') {
+    dependsOn jdk8_zipLinux64Package, jdk8_zipWindows64Package
+}
+
+
+//
+// https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/
+// jdk-11.${jdk11Minor}.${jdk11Update}_${jdk11Build}
+def jdk11Minor = '0'
+def jdk11Update = '5'
+def jdk11Build = '10'
+
+def adoptOpenJdk11FolderVersionString = "jdk-11.${jdk11Minor}.${jdk11Update}%2B${jdk11Build}"
+def adoptOpenJdk11FileVersionString = "11.${jdk11Minor}.${jdk11Update}_${jdk11Build}"
+
+def standaloneJdk11Linux64 = "${rootProject.name}-${rootProject.version}-standalone-jdk11-linux64"
+def standaloneJdk11Windows64 = "${rootProject.name}-${rootProject.version}-standalone-jdk11-windows64"
+
+task jdk11_downloadJdkLinux64tar(type: Download) {
+    def jdkLinux = file("${buildDir}/jdks/jdk-11-linux64.tar.gz")
+    outputs.file jdkLinux
+
+    src "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/${adoptOpenJdk11FolderVersionString}/OpenJDK11U-jdk_x64_linux_hotspot_${adoptOpenJdk11FileVersionString}.tar.gz"
+    dest jdkLinux
+    overwrite false
+}
+
+task jdk11_downloadJdkLinux64(type: Zip, dependsOn: jdk11_downloadJdkLinux64tar) {
+    def jdkLinux = file("${buildDir}/jdks/jdk-11-linux64.zip")
+    outputs.file jdkLinux
+
+    from tarTree(jdk11_downloadJdkLinux64tar.dest)
+    archiveFile.set jdkLinux
+}
+
+task jdk11_downloadJdkWindows64(type: Download) {
+    def jdkWindows = file("${buildDir}/jdks/jdk-11-windows64.zip")
+    outputs.file jdkWindows
+
+    src "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/${adoptOpenJdk11FolderVersionString}/OpenJDK11U-jdk_x64_windows_hotspot_${adoptOpenJdk11FileVersionString}.zip"
+    dest jdkWindows
+    overwrite false
+}
+
+task jdk11_unzipJdkLinux64(type: Copy, dependsOn: jdk11_downloadJdkLinux64) {
+    def zipFile = file("${buildDir}/jdks/jdk-11-linux64.zip")
+    def outputDir = file("${buildDir}/jdks/jdk-11-linux64")
+
+    from zipTree(zipFile)
+    into outputDir
+}
+
+task jdk11_unzipJdkWindows64(type: Copy, dependsOn: jdk11_downloadJdkWindows64) {
+    def zipFile = file("${buildDir}/jdks/jdk-11-windows64.zip")
+    def outputDir = file("${buildDir}/jdks/jdk-11-windows64")
+
+    from zipTree(zipFile)
+    into outputDir
+}
+
+// For JDK 11
+runtime {
+    //distDir = file("${buildDir}/libs")
+    imageDir = file(distributionsDir)
+    options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+    javaHome = org.gradle.internal.os.OperatingSystem.current().isWindows() ? "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}" : "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}"
+
+    modules = [
+            'java.desktop',
+            'java.logging',
+            'java.management',
+            'java.naming',
+            'java.rmi',
+            'java.scripting',
+            'java.security.jgss',
+            'java.security.sasl',
+            'java.sql',
+            'java.transaction.xa',
+            'java.xml',
+            'jdk.jfr',
+            'jdk.management.agent',
+            'jdk.unsupported',
+    ]
+
+    targetPlatform("${rootProject.version}-standalone-jdk11-linux64", "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+    targetPlatform("${rootProject.version}-standalone-jdk11-windows64", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+}
+tasks.runtime.dependsOn jdk11_unzipJdkWindows64, jdk11_unzipJdkLinux64
+
+
+application {
+    mainClassName = project.properties['mainClass']
+}
+
+startScripts {
+    defaultJvmOpts = ['-Xmx6g', '-Djava.net.preferIPv4Stack=true', '-Dcom.sun.management.jmxremote=true', '-Dcom.sun.management.jmxremote.port=7091', '-Dcom.sun.management.jmxremote.authenticate=false', '-Dcom.sun.management.jmxremote.ssl=false', '-XX:+FlightRecorder']
+}
+
+task jdk11_zipLinux64Package(type: Zip, group: 'distribution', dependsOn: tasks.runtime) {
+    from(distributionsDir) {
+        include "${standaloneJdk11Linux64}/**"
+    }
+    archiveFile.set file("${distributionsDir}/${standaloneJdk11Linux64}.zip")
+}
+
+task jdk11_zipWindows64Package(type: Zip, group: 'distribution', dependsOn: tasks.runtime) {
+    from(distributionsDir) {
+        include "${standaloneJdk11Windows64}/**"
+    }
+    archiveFile.set file("${distributionsDir}/${standaloneJdk11Windows64}.zip")
+}
+
+task jdk11_zipAll(group: 'distribution') {
+    dependsOn jdk11_zipLinux64Package, jdk11_zipWindows64Package
+}
+
+task zipAll(group: 'distribution') {
+    dependsOn jdk8_zipAll, jdk11_zipAll
+}
+
+
+task createPom {
+    doLast {
+        def mavenPom = pom {
+            project {
+                inceptionYear '2016'
+                licenses {
+                    license {
+                        name 'Apache License, Version 2.0'
+                        url 'http://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+            }
+        }
+        mavenPom.writeTo("${buildDir}/pom/pom.xml")
+    }
+}
+
+
+sonarqube {
+    properties {
+        // Exclude the generead classes (see "sourceSets.main.java")
+        properties['sonar.sources'] -= [file("${generatedDir}/main/fmpp")]
+        properties['sonar.sources'] -= [file("${generatedDir}/main/javacc")]
+    }
+}
+
+
+idea {
+    module {
+        downloadJavadoc = true
+        downloadSources = true
+
+        inheritOutputDirs = false
+        outputDir = file("${classesDir}/main")
+        testOutputDir = file("${classesDir}/test")
+
+        // Add the compileOnly dependencies. This allows the usage of the "Run"-Button and having the two different fat jars. Basically, we somehow undo the "compileOnly" effect which we exploit for the two fat jars...
+        scopes.RUNTIME.plus += [configurations.pdbModuleCompileOnly]
+        scopes.RUNTIME.plus += [configurations.standaloneCompileOnly]
+    }
+}
