@@ -2,15 +2,13 @@
 
 [![CodeFactor](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/badge/master)](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/overview/master)
 
-_Polypheny-FRAM_ is a cost- and workload aware distributed data base. 
-
-Polypheny-FRAM has two modes: A _standalone_ mode and an _extension_ mode for Polypheny-DB. 
+_Polypheny-FRAM_ is a plugin for Polypheny-DB making it the distributed polystore.
 
 Polypheny-FRAM is a research system developed at the University of Basel, Switzerland. 
 Polypheny-FRAM is not intended to be used in a productive environment! Instead, it helps distributed database researchers to test and evaluate novel data management protocols.
 
 
-## Getting Started ##
+## Getting Started (Standalone Mode) ##
  1) Clone the repository
  2) Run `gradlew jdk8_zipAll`
  3) Enter either the Windows or the Linux distribution which have been assembled in `build/distributions` 
@@ -21,13 +19,11 @@ Polypheny-FRAM is not intended to be used in a productive environment! Instead, 
     - Driver Class:   `org.apache.calcite.avatica.remote.Driver`
     - Connection URL: `jdbc:avatica:remote:url=http://localhost:20591;serialization=protobuf`
 
-
-## Standalone ##
-The standalone mode of Polypheny-FRAM uses HSQLDB as the underlying data storage.
+> Note: In the standalone mode, Polypheny-FRAM uses HSQLDB as the underlying data storage.
 
 
-## Polypheny-DB Extension ##
-Polypheny-FRAM can extend Polypheny-DB to provide data management protocols running on top of a cluster of Polypheny-DB nodes.
+## Polypheny-DB Plugin ##
+Polypheny-FRAM can extend Polypheny-DB to provide data management protocols running on top of a cluster of Polypheny-DB nodes. Basically, distributing the polystore.
 
 
 ## Credits ##
