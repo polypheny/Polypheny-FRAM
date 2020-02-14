@@ -1,5 +1,7 @@
 # Polypheny-FRAM #
 
+[![CodeFactor](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/badge/master)](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/overview/master)
+
 _Polypheny-FRAM_ is a cost- and workload aware distributed data base. 
 
 Polypheny-FRAM has two modes: A _standalone_ mode and an _extension_ mode for Polypheny-DB. 
