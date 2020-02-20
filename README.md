@@ -1,5 +1,6 @@
 # Polypheny-FRAM #
 
+[![CI](https://github.com/polypheny/Polypheny-FRAM/workflows/CI/badge.svg?branch=master)](https://github.com/polypheny/Polypheny-FRAM/actions?query=workflow%3ACI) 
 [![CodeFactor](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/badge/master)](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/overview/master)
 
 _Polypheny-FRAM_ is a plugin for Polypheny-DB making it the distributed polystore.
