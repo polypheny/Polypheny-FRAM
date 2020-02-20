@@ -60,7 +60,7 @@ repositories {
 
 apply plugin: 'idea'
 apply plugin: 'java'
-apply plugin: 'maven'
+apply plugin: 'maven-publish'
 apply plugin: 'ca.coglinc.javacc'
 apply plugin: 'com.hendraanggrian.packr'
 apply plugin: 'de.undercouch.download'
@@ -244,7 +244,7 @@ jar {
 // DO NOT DISTRIBUTE THIS BUNDLE
 task standaloneJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar, group: 'shadow', dependsOn: jar) {
     description = 'Builds a standalone executable jar which includes all required dependencies.'
-    classifier = 'standalone'
+    archiveClassifier = 'standalone'
 
     manifest {
         inheritFrom jar.manifest
@@ -264,7 +264,7 @@ task standaloneJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.Shadow
 // DO NOT DISTRIBUTE THIS BUNDLE
 task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar, group: 'shadow', dependsOn: jar) {
     description = 'Builds a Polypheny-DB Module jar which includes all dependencies required for running it in the Polypheny-DB context.'
-    classifier = 'module'
+    archiveClassifier = 'module'
 
     manifest {
         inheritFrom jar.manifest
@@ -309,13 +309,13 @@ javadoc {
 
 
 task javadocJar(type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
+    archiveClassifier = 'javadoc'
     from javadoc.destinationDir
 }
 
 
 task sourcesJar(type: Jar, dependsOn: classes) {
-    classifier = 'sources'
+    archiveClassifier = 'sources'
     from sourceSets.main.allSource
 }
 
@@ -556,20 +556,29 @@ task zipAll(group: 'distribution') {
 }
 
 
-task createPom {
-    doLast {
-        def mavenPom = pom {
-            project {
-                inceptionYear '2016'
+task generatePom(group: 'publishing', dependsOn: 'generatePomFileForMavenPublication')
+
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            artifact jar
+            artifact source: sourcesJar, classifier: 'sources', extension: 'jar'
+            artifact source: javadocJar, classifier: 'javadoc', extension: 'jar'
+            pom {
+                inceptionYear = '2016'
                 licenses {
                     license {
-                        name 'Apache License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0'
+                        name = 'Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0'
                     }
+                }
+                scm {
+                    url = 'https://github.com/polypheny/Polypheny-FRAM.git'
                 }
             }
         }
-        mavenPom.writeTo("${buildDir}/pom/pom.xml")
     }
 }
 
