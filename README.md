@@ -10,7 +10,7 @@ Polypheny-FRAM is not intended to be used in a productive environment! Instead, 
 
 ## Getting Started (Standalone Mode) ##
  1) Clone the repository
- 2) Run `gradlew jdk8_zipAll`
+ 2) Run `gradlew jdk8_zipAll` &mdash; OpenJDK 8 or 11 required
  3) Enter either the Windows or the Linux distribution which have been assembled in `build/distributions` 
     - Linux:   run `bin/polypheny-fram`
     - Windows: run `bin\polypheny-fram.exe -c --console`

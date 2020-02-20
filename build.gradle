@@ -229,7 +229,7 @@ sourceSets {
 jar {
     manifest {
         attributes 'Manifest-Version': '1.0'
-        attributes 'Copyright': 'Databases and Information Systems Group, Department Mathematics and Computer Science, University of Basel, Switzerland'
+        attributes 'Copyright': 'The Polypheny Project'
         attributes 'Group': rootProject.group
         attributes 'Name': rootProject.name
         attributes 'Version': rootProject.version
