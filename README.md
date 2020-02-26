@@ -1,7 +1,8 @@
 # Polypheny-FRAM #
 
-[![CI](https://github.com/polypheny/Polypheny-FRAM/workflows/CI/badge.svg?branch=master)](https://github.com/polypheny/Polypheny-FRAM/actions?query=workflow%3ACI) 
-[![CodeFactor](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/badge/master)](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/overview/master)
+[![GitHub CI](https://img.shields.io/github/workflow/status/polypheny/Polypheny-FRAM/CI/master?label=CI&logo=GitHub&logoColor=white)](https://github.com/polypheny/Polypheny-FRAM/actions?query=workflow%3ACI) 
+[![CodeFactor](https://img.shields.io/codefactor/grade/github/polypheny/Polypheny-FRAM/master?label=CodeFactor&logo=CodeFactor&logoColor=white)](https://www.codefactor.io/repository/github/polypheny/polypheny-fram/overview/master)
+[![DBIS Nexus](https://img.shields.io/nexus/maven2/https/nexus.dmi.unibas.ch/org.polypheny/polypheny-fram.svg?nexusVersion=3&label=Nexus&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNyA0Mi4yNSI+PGRlZnM+PHN0eWxlPi5jbHMtMXtmaWxsOiMyOWI0NzM7fS5jbHMtMntmaWxsOiNmZmY7fTwvc3R5bGU+PC9kZWZzPjx0aXRsZT5OZXh1c1JlcG9fSWNvbl93aGl0ZStjb2xvcjwvdGl0bGU+PGcgaWQ9IlByb2R1Y3RfTG9nb3NfVmVydGljYWxfV2hpdGVfQ29sb3IiIGRhdGEtbmFtZT0iUHJvZHVjdCBMb2dvcyBWZXJ0aWNhbCBXaGl0ZSArIENvbG9yIj48cGF0aCBjbGFzcz0iY2xzLTEiIGQ9Ik0xOS4xMywyN1YxOS41NmEzLjc3LDMuNzcsMCwwLDEsMi43Ny0xLjI4LDMuNTIsMy41MiwwLDAsMSwuODEuMDdWMTUuNDZhNC45MSw0LjkxLDAsMCwwLTMuNTgsMS43OVYxNS43NGgtM1YyN1oiLz48cG9seWdvbiBjbGFzcz0iY2xzLTIiIHBvaW50cz0iMCAxMC4xOCAwIDMxLjU2IDE4LjUgNDIuMjUgMzcgMzEuNTYgMzcgMTEuMyAzMi40NiAxMy45MiAzMi40NiAyOC45NCAxOC41IDM3IDQuNTQgMjguOTQgNC41NCAxMi44MSAxNy42MyA1LjI1IDE3LjYzIDAgMCAxMC4xOCIvPjxwb2x5Z29uIGNsYXNzPSJjbHMtMSIgcG9pbnRzPSIxOS40NCAwIDE5LjQ0IDUuMjUgMzEuNzMgMTIuMzUgMzYuMjcgOS43MyAxOS40NCAwIi8+PC9nPjwvc3ZnPg==)](https://nexus.dmi.unibas.ch/#browse/search/maven=attributes.maven2.groupId%3Dorg.polypheny%20AND%20attributes.maven2.artifactId%3Dpolypheny-fram)
 
 _Polypheny-FRAM_ is a plugin for Polypheny-DB making it the distributed polystore.
 

@@ -17,18 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.AbstractCatalog;
-import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.RemoteMeta;
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteFrame;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import org.polypheny.fram.standalone.Main.Configuration;
-import org.polypheny.fram.standalone.parser.SqlParserImpl;
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.sql.SQLException;
@@ -63,6 +51,17 @@ import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlDialect.DatabaseProduct;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParser.Config;
+import org.polypheny.fram.AbstractCatalog;
+import org.polypheny.fram.remote.AbstractLocalNode;
+import org.polypheny.fram.remote.RemoteMeta;
+import org.polypheny.fram.remote.RemoteNode;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteFrame;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.parser.SqlParserImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -535,15 +534,20 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
         static final JdbcImplementor rel2sqlConverter;
 
         static final String jdbcConnectionUrl;
+        static final String catalogJdbcConnectionUrl;
 
 
         static {
+            final com.typesafe.config.Config configuration = Main.configuration();
+
             org.hsqldb.Server hsqldbServer = new org.hsqldb.Server();
-            hsqldbServer.setAddress( "0.0.0.0" );
-            hsqldbServer.setPort( Configuration.storagePort );
+            hsqldbServer.setAddress( configuration.getString( "standalone.datastore.jdbc.listens" ) );
+            hsqldbServer.setPort( configuration.getInt( "standalone.datastore.jdbc.port" ) );
             hsqldbServer.setDaemon( true );
-            hsqldbServer.setDatabaseName( 0, "ddbms" );
-            hsqldbServer.setDatabasePath( 0, "mem:" + "ddbms" );
+            hsqldbServer.setDatabaseName( 0, configuration.getString( "standalone.datastore.catalog.name" ) );
+            hsqldbServer.setDatabasePath( 0, "mem:" + configuration.getString( "standalone.datastore.catalog.name" ) );
+            hsqldbServer.setDatabaseName( 1, configuration.getString( "standalone.datastore.database.name" ) );
+            hsqldbServer.setDatabasePath( 1, "mem:" + configuration.getString( "standalone.datastore.database.name" ) );
             hsqldbServer.setLogWriter( null );
             hsqldbServer.setErrWriter( null );
             hsqldbServer.setSilent( true );
@@ -562,15 +566,24 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
                 cacheSettings.put( ConnectionCacheSettings.EXPIRY_UNIT.key(), TimeUnit.HOURS.name() );
                 cacheSettings.put( StatementCacheSettings.EXPIRY_UNIT.key(), TimeUnit.HOURS.name() );
 
-                jdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + Configuration.storagePort + "/" + "ddbms"
-                        + ";hsqldb.tx=locks"
-                        + ";hsqldb.tx_level=serializable"
+                catalogJdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.catalog.name" )
+                        + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
+                        + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
                         + ";close_result=true";
+
+                if ( configuration.hasPath( "standalone.datastore.connection.url" ) ) {
+                    jdbcConnectionUrl = configuration.getString( "standalone.datastore.connection.url" );
+                } else {
+                    jdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.database.name" )
+                            + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
+                            + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
+                            + ";close_result=true";
+                }
 
                 org.hsqldb.jdbc.pool.JDBCXADataSource storageJdbcXaDataSource = new org.hsqldb.jdbc.pool.JDBCXADataSource();
                 storageJdbcXaDataSource.setDatabase( jdbcConnectionUrl );
-                storageJdbcXaDataSource.setUser( "SA" );
-                storageJdbcXaDataSource.setPassword( "" );
+                storageJdbcXaDataSource.setUser( configuration.getString( "standalone.datastore.connection.user" ) );
+                storageJdbcXaDataSource.setPassword( configuration.getString( "standalone.datastore.connection.password" ) );
 
                 storage = new JdbcXAMeta( storageJdbcXaDataSource, new Properties( cacheSettings ) );
                 storageDataSource = storage.getDataSource();
