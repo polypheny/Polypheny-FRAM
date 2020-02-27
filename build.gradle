@@ -42,7 +42,7 @@ buildscript {
         classpath group: 'com.hendraanggrian', name: 'packr-gradle-plugin', version: '0.2'
 
         // The Badass Runtime Plugin (https://github.com/beryx/badass-runtime-plugin/, Apache 2.0)
-        classpath group: 'gradle.plugin.org.beryx', name: 'badass-runtime-plugin', version: '1.3.1'
+        classpath group: 'gradle.plugin.org.beryx', name: 'badass-runtime-plugin', version: '1.8.0'
 
         // Gradle Download Task (https://github.com/michel-kraemer/gradle-download-task, Apache 2.0)
         classpath group: 'de.undercouch', name: 'gradle-download-task', version: '3.4.3'
