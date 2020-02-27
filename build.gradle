@@ -55,6 +55,7 @@ buildscript {
 repositories {
     mavenCentral()
     jcenter()
+    maven { url 'https://nexus.dmi.unibas.ch/repository/maven2/' }
 }
 
 
@@ -99,7 +100,7 @@ lombok {
 
 
 def calciteVersion = '1.19.0' /* KEEP THIS VERSION */
-def avaticaVersion = '1.16.0'
+def avaticaVersion = '1.16.0-POLYPHENY-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 def log4jVersion = '2.12.1'
 
 
