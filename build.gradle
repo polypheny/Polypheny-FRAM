@@ -154,7 +154,7 @@ dependencies {
     //
     // ///// //// /// // /
     // TESTING (Eclipse Public License 1.0)
-    testCompile group: 'junit', name: 'junit', version: '4.12'
+    testCompile group: 'junit', name: 'junit', version: '4.13'
     // Apache Calcite Avatica (Apache 2.0)
     testCompile group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
