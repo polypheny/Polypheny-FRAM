@@ -70,13 +70,36 @@ apply plugin: 'org.beryx.runtime'
 apply plugin: 'org.sonarqube'
 
 
-compileJava.options.encoding = 'UTF-8'
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
-
-
 rootProject.version_build = rootProject.hasProperty('version_build') && !rootProject.property('version_build').toString().trim().isEmpty() ? rootProject.property('version_build').toString().trim().toLowerCase() : ''
 version = "${rootProject.version_major}.${rootProject.version_minor}.${rootProject.version_patch}" + (rootProject.hasProperty('isRelease') ? '' : '-SNAPSHOT')
+
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+
+def resourcesSrcDir = 'src/main/resources'
+def classesDir = "${project.buildDir}/classes"
+def distributionsDir = "${project.buildDir}/distributions"
+def docsDir = "${project.buildDir}/docs"
+def extractedDir = "${project.buildDir}/extracted"
+def generatedDir = "${project.buildDir}/generated"
+def resourcesBuildDir = "${project.buildDir}/resources"
+
+
+sourceSets {
+    main {
+        java {
+            srcDir "${generatedDir}/main/fmpp"
+            srcDir "${generatedDir}/main/javacc"
+        }
+        resources {
+            srcDir 'src/dist/conf'
+        }
+    }
+}
 
 
 configurations {
@@ -177,15 +200,6 @@ dependencies {
 }
 
 
-def resourcesSrcDir = 'src/main/resources'
-def classesDir = "${project.buildDir}/classes"
-def distributionsDir = "${project.buildDir}/distributions"
-def docsDir = "${project.buildDir}/docs"
-def extractedDir = "${project.buildDir}/extracted"
-def generatedDir = "${project.buildDir}/generated"
-def resourcesBuildDir = "${project.buildDir}/resources"
-
-
 task fmpp(group: 'javacc') {
     inputs.files(fileTree("${extractedDir}/main/resources/codegen/templates"), file("${resourcesSrcDir}/codegen/config.fmpp"))
     outputs.dir(file("${generatedDir}/main/fmpp"))
@@ -219,17 +233,10 @@ jjdoc {
 }
 
 
-sourceSets {
-    main {
-        java {
-            srcDir "${generatedDir}/main/fmpp"
-            srcDir "${generatedDir}/main/javacc"
-        }
-        resources {
-            srcDir 'src/dist/conf'
-        }
-    }
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
 }
+
 
 
 jar {
