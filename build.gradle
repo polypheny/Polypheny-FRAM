@@ -225,6 +225,9 @@ sourceSets {
             srcDir "${generatedDir}/main/fmpp"
             srcDir "${generatedDir}/main/javacc"
         }
+        resources {
+            srcDir 'src/dist/conf'
+        }
     }
 }
 
