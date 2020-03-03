@@ -12,18 +12,20 @@ Polypheny-FRAM is not intended to be used in a productive environment! Instead, 
 
 ## Getting Started (Standalone Mode) ##
  1) Clone the repository
- 2) Run `gradlew jdk11_zipAll` &mdash; OpenJDK 8 or 11 required to run this step.
+ 2) Run `gradlew jdk11_zipAll`  
+    > Note: OpenJDK 8 or 11 required to run this step.
  3) Enter either the Windows or the Linux distribution which have been assembled in `build/distributions` 
     - Linux:   run `bin/polypheny-fram`
     - Windows: run `bin\polypheny-fram`
-       > Note for the Windows JDK 8 release: Append the console arguments "bin\polypheny-fram.exe -c --console" to attach a console to the process. Otherwise, Polypheny-FRAM would run as background process. This is a limitation of [packr](https://github.com/libgdx/packr). See [here](https://github.com/libgdx/packr#executable-command-line-interface) for details.
+      > Note for the Windows JDK 8 release (built with the target `jdk8_zipWindows64Package`):\
+        Append the console arguments "bin\polypheny-fram.exe -c --console" to attach a console to the process. Otherwise, Polypheny-FRAM would run as background process. This is a limitation of [packr](https://github.com/libgdx/packr). See [here](https://github.com/libgdx/packr#executable-command-line-interface) for details.
  4) Connect to Polypheny-FRAM using [polypheny-jdbc-driver:1.3-SNAPSHOT](https://nexus.dmi.unibas.ch/#browse/search/maven=attributes.maven2.groupId%3Dorg.polypheny%20AND%20attributes.maven2.artifactId%3Dpolypheny-jdbc-driver%20AND%20version%3D1.3-SNAPSHOT:maven-snapshots%3Aorg.polypheny%3Apolypheny-jdbc-driver%3A1.3-SNAPSHOT) with the following connection details:
     - Driver Class: `org.polypheny.jdbc.Driver`
-    - Connection URL: `jdbc:polypheny://` 
-    > Note: You can also use the Apache Calcite Avatica JDBC driver version 1.16.0 ([@MvnRepository](https://mvnrepository.com/artifact/org.apache.calcite.avatica/avatica-core/1.16.0)). 
+    - Connection URL: `jdbc:polypheny://localhost/`
+    > Note: You can also use the Apache Calcite Avatica driver [avatica-core:1.16.0](https://mvnrepository.com/artifact/org.apache.calcite.avatica/avatica-core/1.16.0). 
       Use the following connection details:
-    > - Driver Class:   `org.apache.calcite.avatica.remote.Driver`
-    > - Connection URL: `jdbc:avatica:remote:url=http://localhost:20591;serialization=protobuf`
+      > - Driver Class:   `org.apache.calcite.avatica.remote.Driver`
+      > - Connection URL: `jdbc:avatica:remote:url=http://localhost:20591;serialization=protobuf`
 
 ### Configuration ###
 Polypheny-FRAM uses the [typesafe](https://github.com/lightbend/config) library. 
