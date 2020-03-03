@@ -17,16 +17,21 @@ Polypheny-FRAM is not intended to be used in a productive environment! Instead, 
     - Linux:   run `bin/polypheny-fram`
     - Windows: run `bin\polypheny-fram`
        > Note for the Windows JDK 8 release: Append the console arguments "bin\polypheny-fram.exe -c --console" to attach a console to the process. Otherwise, Polypheny-FRAM would run as background process. This is a limitation of [packr](https://github.com/libgdx/packr). See [here](https://github.com/libgdx/packr#executable-command-line-interface) for details.
- 4) Connect to Polypheny-FRAM using the Apache Calcite Avatica JDBC driver version 1.16.0 ([@MvnRepository](https://mvnrepository.com/artifact/org.apache.calcite.avatica/avatica-core/1.16.0)). Use the following connection details:
-    - Driver Class:   `org.apache.calcite.avatica.remote.Driver`
-    - Connection URL: `jdbc:avatica:remote:url=http://localhost:20591;serialization=protobuf`
-
-> Note: In the standalone mode, Polypheny-FRAM uses HSQLDB as the underlying data storage.
+ 4) Connect to Polypheny-FRAM using [polypheny-jdbc-driver:1.3-SNAPSHOT](https://nexus.dmi.unibas.ch/#browse/search/maven=attributes.maven2.groupId%3Dorg.polypheny%20AND%20attributes.maven2.artifactId%3Dpolypheny-jdbc-driver%20AND%20version%3D1.3-SNAPSHOT:maven-snapshots%3Aorg.polypheny%3Apolypheny-jdbc-driver%3A1.3-SNAPSHOT) with the following connection details:
+    - Driver Class: `org.polypheny.jdbc.Driver`
+    - Connection URL: `jdbc:polypheny://` 
+    > Note: You can also use the Apache Calcite Avatica JDBC driver version 1.16.0 ([@MvnRepository](https://mvnrepository.com/artifact/org.apache.calcite.avatica/avatica-core/1.16.0)). 
+      Use the following connection details:
+    > - Driver Class:   `org.apache.calcite.avatica.remote.Driver`
+    > - Connection URL: `jdbc:avatica:remote:url=http://localhost:20591;serialization=protobuf`
 
 ### Configuration ###
 Polypheny-FRAM uses the [typesafe](https://github.com/lightbend/config) library. 
 Copy the file `conf/sample-application.conf` to `conf/application.conf` and edit the `conf/application.conf` to fit your needs.   
 You can find the HOCON syntax [here](https://github.com/lightbend/config/blob/master/HOCON.md).
+
+### Persistency of Data ###
+In the standalone mode, Polypheny-FRAM uses HSQLDB as the underlying data storage. By default, HSQLDB is configured to use in memory databases. Therefore, after Polypheny-FRAM has terminated, all data is lost.
 
 
 ## Polypheny-DB Plugin ##
