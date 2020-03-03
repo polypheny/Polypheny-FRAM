@@ -162,7 +162,7 @@ dependencies {
     compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
     compile group: 'commons-codec', name: 'commons-codec', version: '1.14'
     // Google GUAVA (Apache 2.0)
-    compile group: 'com.google.guava', name: 'guava', version: '28.1-jre'
+    compile group: 'com.google.guava', name: 'guava', version: '28.2-jre'
     // Byte Units (Apache 2.0)
     compile group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
     // Cluster Management, JGroups (Apache 2.0)
