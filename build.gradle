@@ -30,22 +30,22 @@ buildscript {
         classpath group: 'ca.coglinc', name: 'javacc-gradle-plugin', version: '2.4.0'
 
         // Shadowing; used to make a fat jar (https://github.com/johnrengelman/shadow, Apache 2.0)
-        classpath group: 'com.github.jengelman.gradle.plugins', name: 'shadow', version: '5.0.0'
+        classpath group: 'com.github.jengelman.gradle.plugins', name: 'shadow', version: '5.2.0'
 
         // Lombok (https://github.com/franzbecker/gradle-lombok, Apache 2.0)
-        classpath group: 'io.franzbecker', name: 'gradle-lombok', version: '3.1.0'
+        classpath group: 'io.franzbecker', name: 'gradle-lombok', version: '3.3.0'
 
         // SonarQube (https://plugins.gradle.org/plugin/org.sonarqube, GNU LGPL 3)
-        classpath group: 'org.sonarsource.scanner.gradle', name: 'sonarqube-gradle-plugin', version: '2.7.1'
+        classpath group: 'org.sonarsource.scanner.gradle', name: 'sonarqube-gradle-plugin', version: '2.8'
 
         // Packr (https://github.com/hendraanggrian/packr-gradle-plugin, Apache 2.0)
         classpath group: 'com.hendraanggrian', name: 'packr-gradle-plugin', version: '0.2'
 
         // The Badass Runtime Plugin (https://github.com/beryx/badass-runtime-plugin/, Apache 2.0)
-        classpath group: 'gradle.plugin.org.beryx', name: 'badass-runtime-plugin', version: '1.3.1'
+        classpath group: 'gradle.plugin.org.beryx', name: 'badass-runtime-plugin', version: '1.8.0'
 
         // Gradle Download Task (https://github.com/michel-kraemer/gradle-download-task, Apache 2.0)
-        classpath group: 'de.undercouch', name: 'gradle-download-task', version: '3.4.3'
+        classpath group: 'de.undercouch', name: 'gradle-download-task', version: '4.0.4'
     }
 
     ant.taskdef(name: 'fmpp', classname: 'fmpp.tools.AntTask', classpath: buildscript.configurations.classpath.asPath)
@@ -70,13 +70,36 @@ apply plugin: 'org.beryx.runtime'
 apply plugin: 'org.sonarqube'
 
 
-compileJava.options.encoding = 'UTF-8'
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
-
-
 rootProject.version_build = rootProject.hasProperty('version_build') && !rootProject.property('version_build').toString().trim().isEmpty() ? rootProject.property('version_build').toString().trim().toLowerCase() : ''
 version = "${rootProject.version_major}.${rootProject.version_minor}.${rootProject.version_patch}" + (rootProject.hasProperty('isRelease') ? '' : '-SNAPSHOT')
+
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+
+def resourcesSrcDir = 'src/main/resources'
+def classesDir = "${project.buildDir}/classes"
+def distributionsDir = "${project.buildDir}/distributions"
+def docsDir = "${project.buildDir}/docs"
+def extractedDir = "${project.buildDir}/extracted"
+def generatedDir = "${project.buildDir}/generated"
+def resourcesBuildDir = "${project.buildDir}/resources"
+
+
+sourceSets {
+    main {
+        java {
+            srcDir "${generatedDir}/main/fmpp"
+            srcDir "${generatedDir}/main/javacc"
+        }
+        resources {
+            srcDir 'src/dist/conf'
+        }
+    }
+}
 
 
 configurations {
@@ -84,18 +107,20 @@ configurations {
 
     pdbModuleCompile.extendsFrom compile
     pdbModuleCompileOnly.extendsFrom pdbModuleCompile
+
     standaloneCompile.extendsFrom compile
     standaloneCompileOnly.extendsFrom standaloneCompile
 
     compileClasspath.extendsFrom compileOnly, pdbModuleCompileOnly, standaloneCompileOnly
+    runtimeClasspath.extendsFrom implementation, runtimeOnly, standaloneCompile
     testCompileClasspath.extendsFrom testCompileOnly, pdbModuleCompileOnly, standaloneCompileOnly
 }
 
 
 lombok {
     // https://projectlombok.org/
-    version = '1.18.10'
-    sha256 = '' // skip verifyLombok task
+    version = '1.18.12'
+    sha256 = '49381508ecb02b3c173368436ef71b24c0d4418ad260e6cc98becbcf4b345406'
 }
 
 
@@ -135,18 +160,18 @@ dependencies {
     compile group: 'commons-transaction', name: 'commons-transaction', version: '1.2'
     compile group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
     compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
-    compile group: 'commons-codec', name: 'commons-codec', version: '1.13'
+    compile group: 'commons-codec', name: 'commons-codec', version: '1.14'
     // Google GUAVA (Apache 2.0)
-    compile group: 'com.google.guava', name: 'guava', version: '28.1-jre'
+    compile group: 'com.google.guava', name: 'guava', version: '28.2-jre'
     // Byte Units (Apache 2.0)
     compile group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
     // Cluster Management, JGroups (Apache 2.0)
     compile group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
     // Metrics, Micrometer Application Metrics (Apache 2.0)
-    compile group: 'io.micrometer', name: 'micrometer-core', version: '1.3.1'
-    compile group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.3.1'
-    compile group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.3.1'
-    compile group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.3.1'
+    compile group: 'io.micrometer', name: 'micrometer-core', version: '1.3.5'
+    compile group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.3.5'
+    compile group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.3.5'
+    compile group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.3.5'
     // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
     compile group: 'com.typesafe', name: 'config', version: '1.4.0'
 
@@ -154,7 +179,7 @@ dependencies {
     //
     // ///// //// /// // /
     // TESTING (Eclipse Public License 1.0)
-    testCompile group: 'junit', name: 'junit', version: '4.12'
+    testCompile group: 'junit', name: 'junit', version: '4.13'
     // Apache Calcite Avatica (Apache 2.0)
     testCompile group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
@@ -173,15 +198,6 @@ dependencies {
     // JAVACC (BSD 2-clause)
     javacc group: 'net.java.dev.javacc', name: 'javacc', version: '4.0' /* KEEP THIS VERSION */
 }
-
-
-def resourcesSrcDir = "src/main/resources"
-def classesDir = "${project.buildDir}/classes"
-def distributionsDir = "${project.buildDir}/distributions"
-def docsDir = "${project.buildDir}/docs"
-def extractedDir = "${project.buildDir}/extracted"
-def generatedDir = "${project.buildDir}/generated"
-def resourcesBuildDir = "${project.buildDir}/resources"
 
 
 task fmpp(group: 'javacc') {
@@ -217,14 +233,10 @@ jjdoc {
 }
 
 
-sourceSets {
-    main {
-        java {
-            srcDir "${generatedDir}/main/fmpp"
-            srcDir "${generatedDir}/main/javacc"
-        }
-    }
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
 }
+
 
 
 jar {
@@ -237,7 +249,7 @@ jar {
         attributes 'Build': rootProject.version_build
     }
 
-    exclude 'log4j2.properties'
+    exclude 'log4j2.properties', 'sample-application.conf'
 }
 
 
@@ -281,7 +293,6 @@ task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJ
     configurations.addAll([project.configurations.pdbModuleCompile])
 
     exclude 'META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-    exclude 'log4j2.properties'
 }
 
 
@@ -331,8 +342,8 @@ artifacts {
 
 // Check https://github.com/AdoptOpenJDK/openjdk8-binaries/releases
 // jdk8u${jdk8Update}-b${jdk8Build}
-def jdk8Update = '232'
-def jdk8Build = '09'
+def jdk8Update = '242'
+def jdk8Build = '08'
 
 def adoptOpenJdk8FolderVersionString = "jdk8u${jdk8Update}-b${jdk8Build}"
 def adoptOpenJdk8FileVersionString = "8u${jdk8Update}b${jdk8Build}"
@@ -375,7 +386,7 @@ packr {
         resources "${resourcesSrcDir}/log4j2.properties" // log4j2.properties is excluded by the jar task, thus we need to include it again
 
     mainClass project.properties['mainClass']
-    vmArgs 'Xmx6g', 'Djava.net.preferIPv4Stack=true', 'Dcom.sun.management.jmxremote=true', 'Dcom.sun.management.jmxremote.port=7091', 'Dcom.sun.management.jmxremote.authenticate=false', 'Dcom.sun.management.jmxremote.ssl=false'
+    vmArgs 'Xms1g', /*'XX:MaxRAMPercentage=75',*/ 'Djava.net.preferIPv4Stack=true', 'Dcom.sun.management.jmxremote=true', 'Dcom.sun.management.jmxremote.port=7091', 'Dcom.sun.management.jmxremote.authenticate=false', 'Dcom.sun.management.jmxremote.ssl=false'
     minimizeJre "${resourcesSrcDir}/minimize/soft"// null = disable
 
     configureLinux64 {
@@ -398,6 +409,27 @@ packLinux64.doFirst {
     standaloneConfigurations.stream().each { it.each { dependencies.add(it) } }
     dependencies.each { classpath += file(it) }
 }
+packLinux64.doLast {
+    // move all jar files from ./bin to ./lib
+    ant.move(todir: "${distributionsDir}/${standaloneJdk8Linux64}/lib") {
+        fileset(dir: "${distributionsDir}/${standaloneJdk8Linux64}/bin") {
+            include(name: '*.jar')
+        }
+    }
+
+    copy {
+        from 'src/dist/conf'
+        into "${distributionsDir}/${standaloneJdk8Linux64}/conf"
+    }
+
+    // fix the entries for classPath in config.json
+    def configFile = file("${distributionsDir}/${standaloneJdk8Linux64}/bin/config.json")
+    def config = new groovy.json.JsonSlurper().parse(configFile)
+    config.classPath = config.classPath.collect { it.endsWith('.jar') ? (it.startsWith('../lib/') ? it : "../lib/${it}") : it }
+    config.classPath += '../conf' // add the folder containing the application.conf and log4j2.properties file to the classPath
+    configFile.write(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(config)))
+}
+
 packWindows64.dependsOn jar, jdk8_downloadJdkWindows64
 packWindows64.doFirst {
     // Add all required dependencies to the classpath of this pack task
@@ -414,11 +446,16 @@ packWindows64.doLast {
         }
     }
 
+    copy {
+        from 'src/dist/conf'
+        into "${distributionsDir}/${standaloneJdk8Windows64}/conf"
+    }
+
     // fix the entries for classPath in config.json
     def configFile = file("${distributionsDir}/${standaloneJdk8Windows64}/bin/config.json")
     def config = new groovy.json.JsonSlurper().parse(configFile)
     config.classPath = config.classPath.collect { it.endsWith('.jar') ? (it.startsWith('../lib/') ? it : "../lib/${it}") : it }
-    config.classPath += "log4j2.properties" // add the log4j2.properties file to the classPath
+    config.classPath += '../conf' // add the folder containing the application.conf and log4j2.properties file to the classPath
     configFile.write(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(config)))
 }
 
@@ -443,9 +480,9 @@ task jdk8_zipAll(group: 'distribution') {
 
 //
 // https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/
-// jdk-11.${jdk11Minor}.${jdk11Update}_${jdk11Build}
+// jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}
 def jdk11Minor = '0'
-def jdk11Update = '5'
+def jdk11Update = '6'
 def jdk11Build = '10'
 
 def adoptOpenJdk11FolderVersionString = "jdk-11.${jdk11Minor}.${jdk11Update}%2B${jdk11Build}"
@@ -496,14 +533,53 @@ task jdk11_unzipJdkWindows64(type: Copy, dependsOn: jdk11_downloadJdkWindows64) 
     into outputDir
 }
 
+application {
+    mainClassName = project.properties['mainClass']
+}
+
+startScripts {
+    defaultJvmOpts = ['-Xms1g', /*'-XX:MaxRAMPercentage=75',*/ '-Djava.net.preferIPv4Stack=true', '-Dcom.sun.management.jmxremote=true', '-Dcom.sun.management.jmxremote.port=7091', '-Dcom.sun.management.jmxremote.authenticate=false', '-Dcom.sun.management.jmxremote.ssl=false', '-XX:+FlightRecorder']
+
+    // The default script content is generated and
+    // with the doLast method we can still alter
+    // the contents before the complete task ends.
+    doLast {
+        // https://mrhaki.blogspot.ch/2015/04/gradle-goodness-alter-start-scripts.html
+        // Support closures to add an additional element to
+        // CLASSPATH definition in the start script files.
+        def configureClasspathVar = { findClasspath, pathSeparator, fileSeparator, appHome, line ->
+            // Looking for the line that starts with either CLASSPATH=
+            // or set CLASSPATH=, defined by the findClasspath closure argument.
+            line = line.replaceAll(~/^${findClasspath}=.*$/) { original ->
+                // Get original line and append it
+                // with the configuration directory.
+                // Use specified path separator, which is different
+                // for Windows or Unix systems.
+                original += "${pathSeparator}\"${appHome}${fileSeparator}conf\""
+            }
+        }
+
+        // Alter the start script for Unix systems.
+        unixScript.text = unixScript.readLines()
+                .collect(configureClasspathVar.curry('CLASSPATH', ':', '/', '$APP_HOME'))
+                .join('\n')
+
+        // Alter the start script for Windows systems.
+        windowsScript.text = windowsScript.readLines()
+                .collect(configureClasspathVar.curry('set CLASSPATH', ';', '/', '%APP_HOME:"=%'))
+                .join('\r\n')
+    }
+}
+
 // For JDK 11
 runtime {
-    //distDir = file("${buildDir}/libs")
     imageDir = file(distributionsDir)
     options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
     javaHome = org.gradle.internal.os.OperatingSystem.current().isWindows() ? "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}" : "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}"
 
     modules = [
+            'java.base',
+            'java.compiler',
             'java.desktop',
             'java.logging',
             'java.management',
@@ -511,10 +587,10 @@ runtime {
             'java.rmi',
             'java.scripting',
             'java.security.jgss',
-            'java.security.sasl',
             'java.sql',
             'java.transaction.xa',
             'java.xml',
+            'jdk.httpserver',
             'jdk.jfr',
             'jdk.management.agent',
             'jdk.unsupported',
@@ -524,15 +600,6 @@ runtime {
     targetPlatform("${rootProject.version}-standalone-jdk11-windows64", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
 }
 tasks.runtime.dependsOn jdk11_unzipJdkWindows64, jdk11_unzipJdkLinux64
-
-
-application {
-    mainClassName = project.properties['mainClass']
-}
-
-startScripts {
-    defaultJvmOpts = ['-Xmx6g', '-Djava.net.preferIPv4Stack=true', '-Dcom.sun.management.jmxremote=true', '-Dcom.sun.management.jmxremote.port=7091', '-Dcom.sun.management.jmxremote.authenticate=false', '-Dcom.sun.management.jmxremote.ssl=false', '-XX:+FlightRecorder']
-}
 
 task jdk11_zipLinux64Package(type: Zip, group: 'distribution', dependsOn: tasks.runtime) {
     from(distributionsDir) {
@@ -557,9 +624,6 @@ task zipAll(group: 'distribution') {
 }
 
 
-task generatePom(group: 'publishing', dependsOn: 'generatePomFileForMavenPublication')
-
-
 publishing {
     publications {
         maven(MavenPublication) {
@@ -582,6 +646,7 @@ publishing {
         }
     }
 }
+task generatePom(group: 'publishing', dependsOn: 'generatePomFileForMavenPublication')
 
 
 sonarqube {
