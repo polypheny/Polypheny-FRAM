@@ -17,14 +17,7 @@
 package org.polypheny.fram.remote;
 
 
-import org.polypheny.fram.remote.RemoteMeta.Method;
-import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteFrame;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import org.polypheny.fram.standalone.Main.Configuration;
+import com.typesafe.config.ConfigFactory;
 import io.micrometer.core.instrument.Metrics;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
@@ -76,6 +69,13 @@ import org.jgroups.protocols.pbcast.STABLE;
 import org.jgroups.protocols.pbcast.STATE_TRANSFER;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.RspList;
+import org.polypheny.fram.remote.RemoteMeta.Method;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteFrame;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,12 +98,10 @@ public class Cluster implements MembershipListener {
 
     private static final Map<UUID, Cluster> CLUSTER_REGISTRY = new HashMap<>();
 
-    private static final String DEFAULT_CLUSTER_NAME = "Polypheny-DB"; // TODO: make configurable
-    private static final UUID DEFAULT_CLUSTER_ID = UUID.nameUUIDFromBytes( DEFAULT_CLUSTER_NAME.getBytes( StandardCharsets.UTF_8 ) );
-
 
     public static Cluster getDefaultCluster() {
-        return CLUSTER_REGISTRY.getOrDefault( DEFAULT_CLUSTER_ID, DefaultCluster.DEFAULT_CLUSTER_INSTANCE );
+        Cluster _default = DefaultCluster.DEFAULT_CLUSTER_INSTANCE;
+        return CLUSTER_REGISTRY.getOrDefault( UUID.nameUUIDFromBytes( _default.clusterName.getBytes( StandardCharsets.UTF_8 ) ), _default );
     }
 
 
@@ -1087,7 +1085,7 @@ public class Cluster implements MembershipListener {
 
         static {
             try {
-                DEFAULT_CLUSTER_INSTANCE = new Cluster( DEFAULT_CLUSTER_NAME, Configuration.clusterPort );
+                DEFAULT_CLUSTER_INSTANCE = new Cluster( ConfigFactory.load().getString( "cluster.name" ), ConfigFactory.load().getInt( "cluster.port" ) );
             } catch ( Exception e ) {
                 throw new RuntimeException( e );
             }

@@ -17,28 +17,29 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.metrics.avatica.MetricsSystemAdapter;
-import org.polypheny.fram.standalone.SimpleNode.DatabaseHolder;
 import com.github.rvesse.airline.HelpOption;
 import com.github.rvesse.airline.SingleCommand;
 import com.github.rvesse.airline.annotations.Command;
 import com.github.rvesse.airline.annotations.Option;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
+import com.typesafe.config.ConfigValueFactory;
 import io.micrometer.core.instrument.Clock;
 import io.micrometer.core.instrument.Metrics;
-import io.micrometer.influx.InfluxConfig;
 import io.micrometer.influx.InfluxMeterRegistry;
 import io.micrometer.jmx.JmxConfig;
 import io.micrometer.jmx.JmxMeterRegistry;
-import io.micrometer.prometheus.PrometheusConfig;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
+import java.io.File;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.time.Duration;
 import javax.inject.Inject;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
 import org.apache.calcite.avatica.remote.Driver.Serialization;
 import org.apache.calcite.avatica.remote.LocalService;
 import org.apache.calcite.avatica.server.HttpServer;
+import org.polypheny.fram.metrics.avatica.MetricsSystemAdapter;
+import org.polypheny.fram.standalone.SimpleNode.DatabaseHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,33 +51,45 @@ import org.slf4j.LoggerFactory;
 public class Main {
 
     private static final Logger LOGGER = LoggerFactory.getLogger( Main.class );
+    private static final int UNSET_INTEGER_OPTION = Integer.MIN_VALUE;
+    private static final String UNSET_STRING_OPTION = "";
 
-    public static final int DEFAULT_PORT = 20591;
-    public static final int DEFAULT_CLUSTER_PORT = 20592;
-    public static final int DEFAULT_STORAGE_PORT = 9001;
+    private static Config configuration;
 
     @Inject
     protected HelpOption<Main> help;
 
-    @Option(name = { "-p", "--port" }, description = "Host port. Default: " + DEFAULT_PORT)
-    private int port = DEFAULT_PORT;
+    @Option(name = { "-c", "--config" }, description = "Configuration file. See sample-application.conf for valid configuration options.")
+    private String configurationFile = UNSET_STRING_OPTION;
+
+    @Option(name = { "-p", "--port" }, description = "JDBC host port.")
+    private int port = UNSET_INTEGER_OPTION;
 
     @Option(name = { "--storage-port" })
-    private int storagePort = DEFAULT_STORAGE_PORT;
+    private int storagePort = UNSET_INTEGER_OPTION;
 
     @Option(name = { "--cluster-port" })
-    private int clusterPort = DEFAULT_CLUSTER_PORT;
+    private int clusterPort = UNSET_INTEGER_OPTION;
 
     @Option(name = { "--influxDbUrl" })
-    private String influxDbUrl = "";
+    private String influxDbUrl = UNSET_STRING_OPTION;
 
 
     /**
      *
      */
-    public static void main( String[] args ) throws Exception {
+    public static void main( final String[] args ) throws Exception {
         SingleCommand<Main> parser = SingleCommand.singleCommand( Main.class );
         parser.parse( args ).run();
+    }
+
+
+    public static Config configuration() {
+        return configuration;
+    }
+
+    public static Config configuration(final String prefix) {
+        return configuration.withOnlyPath( prefix );
     }
 
 
@@ -85,104 +98,108 @@ public class Main {
             return;
         }
 
-        Configuration.databasePort = port;
-        Configuration.clusterPort = clusterPort;
-        Configuration.storagePort = storagePort;
+        Config configuration;
+        if ( configurationFile.equals( UNSET_STRING_OPTION ) == false ) {
+            configuration = ConfigFactory.load( ConfigFactory.parseFile( new File( configurationFile ) ) );
+        } else {
+            configuration = ConfigFactory.load();
+        }
 
-        // Register the JmxMeterRegistry
-        LOGGER.info( "Registering JMX metrics exporter" );
-        JmxMeterRegistry jmxMeterRegistry = new JmxMeterRegistry( JmxConfig.DEFAULT, Clock.SYSTEM );
-        Metrics.addRegistry( jmxMeterRegistry );
+        if ( port != UNSET_INTEGER_OPTION ) {
+            configuration = configuration.withValue( "standalone.jdbc.port", ConfigValueFactory.fromAnyRef( port ) );
+        }
+        if ( clusterPort != UNSET_INTEGER_OPTION ) {
+            configuration = configuration.withValue( "cluster.port", ConfigValueFactory.fromAnyRef( clusterPort ) );
+        }
+        if ( storagePort != UNSET_INTEGER_OPTION ) {
+            configuration = configuration.withValue( "standalone.datastore.jdbc.port", ConfigValueFactory.fromAnyRef( storagePort ) );
+        }
+        if ( influxDbUrl.equals( UNSET_STRING_OPTION ) == false ) {
+            configuration = configuration.withValue( "standalone.metricsregistry.influx.enabled", ConfigValueFactory.fromAnyRef( true ) );
+            configuration = configuration.withValue( "standalone.metricsregistry.influx.uri", ConfigValueFactory.fromAnyRef( influxDbUrl ) );
+        }
 
-        if ( !(this.influxDbUrl == null || this.influxDbUrl.isEmpty()) ) {
+        Main.configuration = configuration;
+
+        //
+        //
+        //
+
+        if ( Main.configuration().getBoolean( "standalone.metricsregistry.jmx.enabled" ) ) {
+            // Register the JmxMeterRegistry
+            LOGGER.info( "Registering JMX metrics exporter" );
+            final JmxMeterRegistry jmxMeterRegistry = new JmxMeterRegistry( JmxConfig.DEFAULT, Clock.SYSTEM );
+            Metrics.addRegistry( jmxMeterRegistry );
+        }
+
+        if ( Main.configuration().getBoolean( "standalone.metricsregistry.influx.enabled" ) && configuration.getString( "standalone.metricsregistry.influx.uri" ).isEmpty() == false ) {
             // Register the InfluxMeterRegistry
             LOGGER.info( "Registering InfluxDB metrics exporter" );
-            InfluxMeterRegistry influxMeterRegistry = new InfluxMeterRegistry( new InfluxConfig() {
-                @Override
-                public Duration step() {
-                    return Duration.ofSeconds( 1 ); // report every second
-                }
-
-
-                @Override
-                public String uri() {
-                    return Main.this.influxDbUrl;
-                }
-
-
-                @Override
-                public String get( String key ) {
-                    return null; // use default values for everything else OR lookup the key in the config and return its value.
-                }
-            }, Clock.SYSTEM );
+            final InfluxMeterRegistry influxMeterRegistry = new InfluxMeterRegistry( key -> Main.configuration().getString( "standalone.metricsregistry." + key ), Clock.SYSTEM );
             Metrics.addRegistry( influxMeterRegistry );
         }
 
-        // Register the PrometheusMeterRegistry
-        LOGGER.info( "Registering Prometheus metrics exporter" );
-        PrometheusMeterRegistry prometheusMeterRegistry = new PrometheusMeterRegistry( PrometheusConfig.DEFAULT );
-        com.sun.net.httpserver.HttpServer metricsServer = com.sun.net.httpserver.HttpServer.create();
-        metricsServer.bind( new InetSocketAddress( Configuration.databasePort - 1 ), 0 );
-        metricsServer.createContext( "/", httpExchange -> {
-            String response = prometheusMeterRegistry.scrape();
-            httpExchange.sendResponseHeaders( 200, response.getBytes().length );
-            try ( OutputStream os = httpExchange.getResponseBody() ) {
-                os.write( response.getBytes() );
-            }
-        } );
-        Metrics.addRegistry( prometheusMeterRegistry );
+        if ( Main.configuration().getBoolean( "standalone.metricsregistry.prometheus.enabled" ) ) {
+            // Register the PrometheusMeterRegistry
+            LOGGER.info( "Registering Prometheus metrics exporter" );
+            PrometheusMeterRegistry prometheusMeterRegistry = new PrometheusMeterRegistry( key -> Main.configuration().getString( "standalone.metricsregistry." + key ) );
+            final com.sun.net.httpserver.HttpServer metricsServer = com.sun.net.httpserver.HttpServer.create();
+            metricsServer.bind( new InetSocketAddress( Main.configuration().getInt( "standalone.metricsregistry.prometheus.port" ) ), 0 );
+            metricsServer.createContext( Main.configuration().getString( "standalone.metricsregistry.prometheus.path" ), httpExchange -> {
+                final byte[] response = prometheusMeterRegistry.scrape().getBytes();
+                httpExchange.sendResponseHeaders( 200, response.length );
+                try ( final OutputStream responseBody = httpExchange.getResponseBody() ) {
+                    responseBody.write( response );
+                }
+            } );
+            Metrics.addRegistry( prometheusMeterRegistry );
 
-        LOGGER.info( "Creating local HSQLDB service" );
-        LocalService hsqldb = new LocalService( new JdbcMeta( DatabaseHolder.jdbcConnectionUrl, "SA", "" ) );
+            Runtime.getRuntime().addShutdownHook( new Thread( () -> metricsServer.stop( 0 ), "MetricsServer ShutdownHook" ) );
 
-        LOGGER.info( "Creating PolyMesh service" );
-        LocalService pdbddu = new LocalService( DataDistributionUnitMeta.newMetaInstance(), new MetricsSystemAdapter() );
+            LOGGER.info( "Starting metrics publishing server(s)" );
+            metricsServer.start();
+        }
 
-        // Construct the hsqldbServer
-        LOGGER.info( "Creating the server for the local HSQLDB service" );
-        HttpServer hsqldbServer = new HttpServer.Builder()
-                .withHandler( hsqldb, Serialization.PROTOBUF )
-                .withPort( Configuration.databasePort - 2 )
-                .build();
-        // Construct the pdbdduServer
-        LOGGER.info( "Creating the server for the PolyMesh service" );
-        HttpServer pdbdduServer = new HttpServer.Builder()
-                .withHandler( pdbddu, Serialization.PROTOBUF )
-                .withPort( Configuration.databasePort )
+        if ( Main.configuration().getBoolean( "standalone.datastore.passthrough.enabled" ) ) {
+            LOGGER.info( "Creating local HSQLDB service" );
+            final LocalService hsqldb = new LocalService( new JdbcMeta( DatabaseHolder.jdbcConnectionUrl, "SA", "" ) );
+
+            // Construct the hsqldbPassThroughServer
+            LOGGER.info( "Creating the server for the local HSQLDB service" );
+            final HttpServer hsqldbPassThroughServer = new HttpServer.Builder()
+                    .withHandler( hsqldb, Serialization.valueOf( Main.configuration().getString( "standalone.jdbc.serialization" ).toUpperCase() ) )
+                    .withPort( Main.configuration().getInt( "standalone.datastore.passthrough.port" ) )
+                    .build();
+
+            Runtime.getRuntime().addShutdownHook( new Thread( hsqldbPassThroughServer::stop, "HSQLDB PassThrough ShutdownHook" ) );
+
+            LOGGER.info( "Starting the HSQLDB server" );
+            hsqldbPassThroughServer.start();
+        }
+
+        //
+        //
+        //
+
+        LOGGER.info( "Creating Polypheny-FRAM service" );
+        LocalService polyphenyFram = new LocalService( DataDistributionUnitMeta.newMetaInstance(), new MetricsSystemAdapter() );
+
+        // Construct the polyphenyFramServer
+        LOGGER.info( "Creating the server for the Polypheny-FRAM service" );
+        HttpServer polyphenyFramServer = new HttpServer.Builder()
+                .withHandler( polyphenyFram, Serialization.valueOf( Main.configuration().getString( "standalone.jdbc.serialization" ).toUpperCase() ) )
+                .withPort( Main.configuration().getInt( "standalone.jdbc.port" ) )
                 .build();
 
         // Add shutdown hook
-        LOGGER.info( "Adding shutdown hooks to stop all servers" );
-        Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-            if ( hsqldbServer != null ) {
-                hsqldbServer.stop();
-            }
-            if ( pdbdduServer != null ) {
-                pdbdduServer.stop();
-            }
-            if ( metricsServer != null ) {
-                metricsServer.stop( 0 );
-            }
-        }, "HTTPServer ShutdownHook" ) );
+        Runtime.getRuntime().addShutdownHook( new Thread( polyphenyFramServer::stop, "HTTPServer ShutdownHook" ) );
 
         // Then start it
-        LOGGER.info( "Starting the HSQLDB server" );
-        hsqldbServer.start();
-        LOGGER.info( "Starting the HSQLDB server" );
-        pdbdduServer.start();
-        LOGGER.info( "Starting metrics publishing server(s)" );
-        metricsServer.start();
+        LOGGER.info( "Starting the Polypheny-FRAM server" );
+        polyphenyFramServer.start();
 
         // Wait for termination
         System.out.println( "*** STARTUP FINISHED ***" );
-        pdbdduServer.join();
-    }
-
-
-    public static class Configuration {
-
-        public static int databasePort = DEFAULT_PORT;
-        public static int clusterPort = DEFAULT_CLUSTER_PORT;
-        public static int storagePort = DEFAULT_STORAGE_PORT;
+        polyphenyFramServer.join();
     }
 }
