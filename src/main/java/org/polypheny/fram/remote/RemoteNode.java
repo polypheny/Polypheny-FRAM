@@ -43,10 +43,12 @@ import org.slf4j.LoggerFactory;
 
 
 /**
- *
+ * A remote node in a cluster.
  */
 @EqualsAndHashCode(callSuper = false)
 public class RemoteNode implements RemoteMeta, Serializable {
+
+    private static final long serialVersionUID = 1583418703L;
 
     private static final Logger LOGGER = LoggerFactory.getLogger( RemoteNode.class );
 
@@ -106,220 +108,166 @@ public class RemoteNode implements RemoteMeta, Serializable {
 
     @Override
     public Map<Common.DatabaseProperty, Serializable> getDatabaseProperties( RemoteConnectionHandle remoteConnectionHandle ) throws RemoteException {
-        return null;
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
     @Override
     public RemoteStatementHandle prepare( final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} )", this.address, remoteStatementHandle, sql, maxRowCount );
-        }
+        LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} )", this.address, remoteStatementHandle, sql, maxRowCount );
 
         final RemoteStatementHandle result = this.callRemoteMethod( Method.prepare( remoteStatementHandle, sql, maxRowCount ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} ) = {}", this.address, remoteStatementHandle, sql, maxRowCount, result );
-        }
+        LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} ) = {}", this.address, remoteStatementHandle, sql, maxRowCount, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-        }
+        LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
 
         final RemoteExecuteResult result = this.callRemoteMethod( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
-        }
+        LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sqlCommands );
-        }
+        LOGGER.trace( "{}: prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sqlCommands );
 
         final RemoteExecuteBatchResult result = this.callRemoteMethod( Method.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, sqlCommands ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
-        }
+        LOGGER.trace( "{}: prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteBatchResult executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues );
-        }
+        LOGGER.trace( "{}: executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues );
 
         final RemoteExecuteBatchResult result = this.callRemoteMethod( Method.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, result );
-        }
+        LOGGER.trace( "{}: executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, result );
         return result;
     }
 
 
     @Override
     public RemoteFrame fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {} )", this.address, remoteStatementHandle, offset, fetchMaxRowCount );
-        }
+        LOGGER.trace( "{}: fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {} )", this.address, remoteStatementHandle, offset, fetchMaxRowCount );
 
         final RemoteFrame result = this.callRemoteMethod( Method.fetch( remoteStatementHandle, offset, fetchMaxRowCount ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {} ) = {}", this.address, remoteStatementHandle, offset, fetchMaxRowCount, result );
-        }
+        LOGGER.trace( "{}: fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {} ) = {}", this.address, remoteStatementHandle, offset, fetchMaxRowCount, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteResult execute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, List<Common.TypedValue> parameterValues, int maxRowsInFirstFrame ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
-        }
+        LOGGER.trace( "{}: execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
 
         final RemoteExecuteResult result = this.callRemoteMethod( Method.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, result );
-        }
+        LOGGER.trace( "{}: execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, result );
         return result;
     }
 
 
     @Override
     public Void closeStatement( RemoteStatementHandle remoteStatementHandle ) throws RemoteException {
+        LOGGER.trace( "{}: closeStatement( remoteStatementHandle: {} )", this.address, remoteStatementHandle );
 
-        // TODO
+        /*final Void result =*/
+        this.callRemoteMethod( Method.closeStatement( remoteStatementHandle ) );
 
+        LOGGER.trace( "{}: execute( remoteStatementHandle: {} ) = {VOID}", this.address, remoteStatementHandle );
         return null; //
     }
 
 
     @Override
     public Void closeConnection( RemoteConnectionHandle remoteConnectionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: closeConnection( remoteConnectionHandle: {} )", this.address, remoteConnectionHandle );
-        }
+        LOGGER.trace( "{}: closeConnection( remoteConnectionHandle: {} )", this.address, remoteConnectionHandle );
 
         /*final Void result =*/
         this.callRemoteMethod( Method.closeConnection( remoteConnectionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: closeConnection( remoteConnectionHandle: {} ) = {}", this.address, remoteConnectionHandle, "{VOID}" );
-        }
-
+        LOGGER.trace( "{}: closeConnection( remoteConnectionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle );
         return null; //
     }
 
 
     @Override
     public Void abortConnection( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
 
         /*final Void result =*/
         this.callRemoteMethod( Method.abort( remoteConnectionHandle, remoteTransactionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, "{VOID}" );
-        }
-
+        LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
         return null; //
     }
 
 
     @Override
     public Common.ConnectionProperties connectionSync( RemoteConnectionHandle remoteConnectionHandle, Common.ConnectionProperties properties ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, properties: {} )", this.address, remoteConnectionHandle, properties );
-        }
+        LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, properties: {} )", this.address, remoteConnectionHandle, properties );
 
         final Common.ConnectionProperties result = this.callRemoteMethod( Method.connectionSync( remoteConnectionHandle, properties ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, properties: {} ) = {}", this.address, remoteConnectionHandle, properties, "{VOID}" );
-        }
+        LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, properties: {} ) = {VOID}", this.address, remoteConnectionHandle, properties );
         return result;
     }
 
 
     @Override
     public Void onePhaseCommit( RemoteConnectionHandle remoteConnectionHandle, RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "{}: onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
 
         /*final Void result =*/
         this.callRemoteMethod( Method.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, "{VOID}" );
-        }
-
+        LOGGER.trace( "{}: onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
         return null; //
     }
 
 
     @Override
     public boolean prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "{}: prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
 
         final boolean result = this.callRemoteMethod( Method.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, result );
-        }
+        LOGGER.trace( "{}: prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, result );
         return result;
     }
 
 
     @Override
     public Void commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "{}: commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
 
         /*final Void result =*/
         this.callRemoteMethod( Method.commit( remoteConnectionHandle, remoteTransactionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, "{VOID}" );
-        }
-
+        LOGGER.trace( "{}: commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
         return null; //
     }
 
 
     @Override
     public Void rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", this.address, remoteConnectionHandle, remoteTransactionHandle );
 
         /*final Void result =*/
         this.callRemoteMethod( Method.rollback( remoteConnectionHandle, remoteTransactionHandle ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", this.address, remoteConnectionHandle, remoteTransactionHandle, "{VOID}" );
-        }
-
+        LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
         return null; //
     }
 
