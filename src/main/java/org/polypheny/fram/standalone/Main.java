@@ -31,13 +31,19 @@ import io.micrometer.jmx.JmxConfig;
 import io.micrometer.jmx.JmxMeterRegistry;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
 import java.io.File;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
+import java.io.IOException;
+import java.util.Objects;
 import javax.inject.Inject;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
 import org.apache.calcite.avatica.remote.Driver.Serialization;
 import org.apache.calcite.avatica.remote.LocalService;
 import org.apache.calcite.avatica.server.HttpServer;
+import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.polypheny.fram.metrics.avatica.MetricsSystemAdapter;
 import org.polypheny.fram.standalone.SimpleNode.DatabaseHolder;
 import org.slf4j.Logger;
@@ -79,8 +85,14 @@ public class Main {
      *
      */
     public static void main( final String[] args ) throws Exception {
+        Objects.requireNonNull( args );
         SingleCommand<Main> parser = SingleCommand.singleCommand( Main.class );
         parser.parse( args ).run();
+    }
+
+
+    private static void setConfiguration( final Config configuration ) {
+        Main.configuration = configuration;
     }
 
 
@@ -88,7 +100,8 @@ public class Main {
         return configuration;
     }
 
-    public static Config configuration(final String prefix) {
+
+    public static Config configuration( final String prefix ) {
         return configuration.withOnlyPath( prefix );
     }
 
@@ -98,28 +111,28 @@ public class Main {
             return;
         }
 
-        Config configuration;
-        if ( configurationFile.equals( UNSET_STRING_OPTION ) == false ) {
-            configuration = ConfigFactory.load( ConfigFactory.parseFile( new File( configurationFile ) ) );
+        Config loadedConfiguration;
+        if ( !configurationFile.equals( UNSET_STRING_OPTION ) ) {
+            loadedConfiguration = ConfigFactory.load( ConfigFactory.parseFile( new File( configurationFile ) ) );
         } else {
-            configuration = ConfigFactory.load();
+            loadedConfiguration = ConfigFactory.load();
         }
 
         if ( port != UNSET_INTEGER_OPTION ) {
-            configuration = configuration.withValue( "standalone.jdbc.port", ConfigValueFactory.fromAnyRef( port ) );
+            loadedConfiguration = loadedConfiguration.withValue( "standalone.jdbc.port", ConfigValueFactory.fromAnyRef( port ) );
         }
         if ( clusterPort != UNSET_INTEGER_OPTION ) {
-            configuration = configuration.withValue( "cluster.port", ConfigValueFactory.fromAnyRef( clusterPort ) );
+            loadedConfiguration = loadedConfiguration.withValue( "cluster.port", ConfigValueFactory.fromAnyRef( clusterPort ) );
         }
         if ( storagePort != UNSET_INTEGER_OPTION ) {
-            configuration = configuration.withValue( "standalone.datastore.jdbc.port", ConfigValueFactory.fromAnyRef( storagePort ) );
+            loadedConfiguration = loadedConfiguration.withValue( "standalone.datastore.jdbc.port", ConfigValueFactory.fromAnyRef( storagePort ) );
         }
-        if ( influxDbUrl.equals( UNSET_STRING_OPTION ) == false ) {
-            configuration = configuration.withValue( "standalone.metricsregistry.influx.enabled", ConfigValueFactory.fromAnyRef( true ) );
-            configuration = configuration.withValue( "standalone.metricsregistry.influx.uri", ConfigValueFactory.fromAnyRef( influxDbUrl ) );
+        if ( !influxDbUrl.equals( UNSET_STRING_OPTION ) ) {
+            loadedConfiguration = loadedConfiguration.withValue( "standalone.metricsregistry.influx.enabled", ConfigValueFactory.fromAnyRef( true ) );
+            loadedConfiguration = loadedConfiguration.withValue( "standalone.metricsregistry.influx.uri", ConfigValueFactory.fromAnyRef( influxDbUrl ) );
         }
 
-        Main.configuration = configuration;
+        Main.setConfiguration( loadedConfiguration );
 
         //
         //
@@ -132,7 +145,7 @@ public class Main {
             Metrics.addRegistry( jmxMeterRegistry );
         }
 
-        if ( Main.configuration().getBoolean( "standalone.metricsregistry.influx.enabled" ) && configuration.getString( "standalone.metricsregistry.influx.uri" ).isEmpty() == false ) {
+        if ( Main.configuration().getBoolean( "standalone.metricsregistry.influx.enabled" ) && !Main.configuration().getString( "standalone.metricsregistry.influx.uri" ).isEmpty() ) {
             // Register the InfluxMeterRegistry
             LOGGER.info( "Registering InfluxDB metrics exporter" );
             final InfluxMeterRegistry influxMeterRegistry = new InfluxMeterRegistry( key -> Main.configuration().getString( "standalone.metricsregistry." + key ), Clock.SYSTEM );
@@ -143,21 +156,32 @@ public class Main {
             // Register the PrometheusMeterRegistry
             LOGGER.info( "Registering Prometheus metrics exporter" );
             PrometheusMeterRegistry prometheusMeterRegistry = new PrometheusMeterRegistry( key -> Main.configuration().getString( "standalone.metricsregistry." + key ) );
-            final com.sun.net.httpserver.HttpServer metricsServer = com.sun.net.httpserver.HttpServer.create();
-            metricsServer.bind( new InetSocketAddress( Main.configuration().getInt( "standalone.metricsregistry.prometheus.port" ) ), 0 );
-            metricsServer.createContext( Main.configuration().getString( "standalone.metricsregistry.prometheus.path" ), httpExchange -> {
-                final byte[] response = prometheusMeterRegistry.scrape().getBytes();
-                httpExchange.sendResponseHeaders( 200, response.length );
-                try ( final OutputStream responseBody = httpExchange.getResponseBody() ) {
-                    responseBody.write( response );
+
+            // Jetty Server
+            Server prometheusEndpointServer = new Server( Main.configuration().getInt( "standalone.metricsregistry.prometheus.port" ) );
+            prometheusEndpointServer.setHandler( new AbstractHandler() {
+                @Override
+                public void handle( final String target, final Request baseRequest, final HttpServletRequest request, final HttpServletResponse response ) throws IOException, ServletException {
+                    if ( target.equalsIgnoreCase( Main.configuration().getString( "standalone.metricsregistry.prometheus.path" ) ) ) {
+                        response.setStatus( HttpServletResponse.SC_OK );
+                        prometheusMeterRegistry.scrape( response.getWriter() );
+                        baseRequest.setHandled( true );
+                    }
                 }
             } );
+
             Metrics.addRegistry( prometheusMeterRegistry );
 
-            Runtime.getRuntime().addShutdownHook( new Thread( () -> metricsServer.stop( 0 ), "MetricsServer ShutdownHook" ) );
+            Runtime.getRuntime().addShutdownHook( new Thread( () -> {
+                try {
+                    prometheusEndpointServer.stop();
+                } catch ( Exception e ) {
+                    throw new RuntimeException( e );
+                }
+            }, "MetricsServer ShutdownHook" ) );
 
             LOGGER.info( "Starting metrics publishing server(s)" );
-            metricsServer.start();
+            prometheusEndpointServer.start();
         }
 
         if ( Main.configuration().getBoolean( "standalone.datastore.passthrough.enabled" ) ) {
@@ -199,7 +223,7 @@ public class Main {
         polyphenyFramServer.start();
 
         // Wait for termination
-        System.out.println( "*** STARTUP FINISHED ***" );
+        System.out.println( "*** STARTUP FINISHED ***" ); //NOSONAR squid:S106 - Justification: We *always* want to have this printed, regardless of the logger configuration.
         polyphenyFramServer.join();
     }
 }
