@@ -17,7 +17,6 @@
 package org.polypheny.fram.standalone.transaction;
 
 
-import org.polypheny.fram.standalone.Utils;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.security.AccessController;
@@ -26,6 +25,7 @@ import java.util.Arrays;
 import java.util.UUID;
 import javax.transaction.xa.Xid;
 import org.apache.commons.codec.binary.Hex;
+import org.polypheny.fram.standalone.Utils;
 
 
 /**
@@ -114,8 +114,8 @@ public class TransactionHandle implements Xid, Serializable {
      */
     private TransactionHandle( final Xid xid, final UUID nodeId ) {
         //
-        final byte[] globalTransactionId = xid.getGlobalTransactionId();
-        System.arraycopy( globalTransactionId, 0, this.globalTransactionId, 0, Math.min( globalTransactionId.length, this.globalTransactionId.length ) );
+        final byte[] otherGlobalTransactionId = xid.getGlobalTransactionId();
+        System.arraycopy( otherGlobalTransactionId, 0, this.globalTransactionId, 0, Math.min( otherGlobalTransactionId.length, this.globalTransactionId.length ) );
 
         //
         setField( this.branchQualifier, NODE_ID_LSB_INDEX, nodeId.getMostSignificantBits(), nodeId.getLeastSignificantBits() );
@@ -199,6 +199,26 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
+    public UUID getReservedId() {
+        return extractUUID( this.branchQualifier, RESERVED_ID_LSB_INDEX );
+    }
+
+
+    public void setReservedId( final UUID reservedId ) {
+        setReservedField( reservedId.getMostSignificantBits(), reservedId.getLeastSignificantBits() );
+    }
+
+
+    public long[] getReservedField() {
+        return getField( this.branchQualifier, RESERVED_ID_LSB_INDEX );
+    }
+
+
+    public void setReservedField( final long mostSignificantBytes, final long leastSignificantBytes ) {
+        setField( this.branchQualifier, RESERVED_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+    }
+
+
     public UUID getCustomId() {
         return extractUUID( this.branchQualifier, CUSTOM_ID_LSB_INDEX );
     }
@@ -262,10 +282,10 @@ public class TransactionHandle implements Xid, Serializable {
     private String identifierToString( final byte[] identifier ) {
         // Use regex to format the hex string by inserting hyphens in the canonical format: 8-4-4-4-12
         return Hex.encodeHexString( identifier ).replaceFirst(
-                "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})"
-                        + "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})"
-                        + "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})"
-                        + "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})", "$1-$2-$3-$4-$5--$6-$7-$8-$9-$10--$11-$12-$13-$14-$15--$16-$17-$18-$19-$20" );
+                "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})" + //NOSONAR squid:S1192
+                        "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})" + //NOSONAR squid:S1192
+                        "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})" + //NOSONAR squid:S1192
+                        "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})", "$1-$2-$3-$4-$5--$6-$7-$8-$9-$10--$11-$12-$13-$14-$15--$16-$17-$18-$19-$20" ); //NOSONAR squid:S1192
     }
 
 
@@ -284,7 +304,7 @@ public class TransactionHandle implements Xid, Serializable {
                 AccessController.doPrivileged( (PrivilegedAction<Void>) () -> {
                     globalTransactionId_Field.setAccessible( true );
                     branchQualifier_Field.setAccessible( true );
-                    return null;
+                    return (Void) null;
                 } );
 
                 globalTransactionId_Field.set( clone, this.globalTransactionId.clone() );
@@ -293,7 +313,7 @@ public class TransactionHandle implements Xid, Serializable {
                 AccessController.doPrivileged( (PrivilegedAction<Void>) () -> {
                     globalTransactionId_Field.setAccessible( false );
                     branchQualifier_Field.setAccessible( false );
-                    return null;
+                    return (Void) null;
                 } );
             }
 
@@ -311,11 +331,11 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
+    /**
+     * @return Format identifier. O means the OSI CCR format.
+     */
     @Override
     public int getFormatId() {
-        /**
-         * Format identifier. O means the OSI CCR format.
-         */
         return 0;
     }
 
