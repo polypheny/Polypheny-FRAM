@@ -17,15 +17,8 @@
 package org.polypheny.fram.remote;
 
 
-import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteFrame;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import java.io.IOException;
 import java.io.Serializable;
-import java.lang.reflect.Field;
 import java.rmi.RemoteException;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +32,12 @@ import org.jgroups.Message.Flag;
 import org.jgroups.blocks.MethodCall;
 import org.jgroups.blocks.RequestOptions;
 import org.jgroups.blocks.ResponseMode;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteFrame;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,19 +48,6 @@ import org.slf4j.LoggerFactory;
 @EqualsAndHashCode(callSuper = false)
 public class RemoteNode implements RemoteMeta, Serializable {
 
-    private static final Field FIELD_cluster;
-
-
-    static {
-        try {
-            FIELD_cluster = RemoteNode.class.getDeclaredField( "cluster" );
-        } catch ( NoSuchFieldException e ) {
-            e.printStackTrace();
-            throw new Error( e );
-        }
-    }
-
-
     private static final Logger LOGGER = LoggerFactory.getLogger( RemoteNode.class );
 
     private static final RequestOptions DEFAULT_REQUEST_OPTIONS = new RequestOptions()
@@ -70,7 +56,7 @@ public class RemoteNode implements RemoteMeta, Serializable {
             .setFlags( Flag.OOB );
 
     private final Address address;
-    private final transient Cluster cluster;
+    private transient Cluster cluster;
 
 
     RemoteNode( final Address address ) {
@@ -87,24 +73,14 @@ public class RemoteNode implements RemoteMeta, Serializable {
     private void writeObject( final java.io.ObjectOutputStream out ) throws IOException {
         out.defaultWriteObject();
 
-        out.writeObject( cluster.getClusterId() );
+        out.writeObject( (UUID) cluster.getClusterId() );
     }
 
 
     private void readObject( final java.io.ObjectInputStream in ) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
 
-        final UUID clusterId = (UUID) in.readObject();
-        final Cluster cluster = Cluster.getCluster( clusterId );
-        try {
-            FIELD_cluster.setAccessible( true );
-            FIELD_cluster.set( this, cluster );
-        } catch ( IllegalAccessException e ) {
-            e.printStackTrace();
-            throw new Error( e );
-        } finally {
-            FIELD_cluster.setAccessible( false );
-        }
+        this.cluster = Cluster.getCluster( (UUID) in.readObject() );
     }
 
 
