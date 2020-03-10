@@ -187,17 +187,18 @@ public class Main {
         if ( Main.configuration().getBoolean( "standalone.datastore.passthrough.enabled" ) ) {
             LOGGER.info( "Creating local HSQLDB service" );
             final LocalService hsqldb = new LocalService( new JdbcMeta( DatabaseHolder.jdbcConnectionUrl, "SA", "" ) );
+            final int passthroughPort = Main.configuration().getInt( "standalone.datastore.passthrough.port" );
 
             // Construct the hsqldbPassThroughServer
             LOGGER.info( "Creating the server for the local HSQLDB service" );
             final HttpServer hsqldbPassThroughServer = new HttpServer.Builder()
                     .withHandler( hsqldb, Serialization.valueOf( Main.configuration().getString( "standalone.jdbc.serialization" ).toUpperCase() ) )
-                    .withPort( Main.configuration().getInt( "standalone.datastore.passthrough.port" ) )
+                    .withPort( passthroughPort )
                     .build();
 
             Runtime.getRuntime().addShutdownHook( new Thread( hsqldbPassThroughServer::stop, "HSQLDB PassThrough ShutdownHook" ) );
 
-            LOGGER.info( "Starting the HSQLDB server" );
+            LOGGER.info( "Starting the HSQLDB server at port {}", passthroughPort );
             hsqldbPassThroughServer.start();
         }
 
@@ -210,16 +211,17 @@ public class Main {
 
         // Construct the polyphenyFramServer
         LOGGER.info( "Creating the server for the Polypheny-FRAM service" );
+        final int standalonePort = Main.configuration().getInt( "standalone.jdbc.port" );
         HttpServer polyphenyFramServer = new HttpServer.Builder()
                 .withHandler( polyphenyFram, Serialization.valueOf( Main.configuration().getString( "standalone.jdbc.serialization" ).toUpperCase() ) )
-                .withPort( Main.configuration().getInt( "standalone.jdbc.port" ) )
+                .withPort( standalonePort )
                 .build();
 
         // Add shutdown hook
         Runtime.getRuntime().addShutdownHook( new Thread( polyphenyFramServer::stop, "HTTPServer ShutdownHook" ) );
 
         // Then start it
-        LOGGER.info( "Starting the Polypheny-FRAM server" );
+        LOGGER.info( "Starting the Polypheny-FRAM server at port {}", standalonePort );
         polyphenyFramServer.start();
 
         // Wait for termination

@@ -155,16 +155,10 @@ void TableElement(List<SqlNode> list) :
     final ColumnStrategy strategy;
 }
 {
-    id = SimpleIdentifier()
+    LOOKAHEAD(2) id = SimpleIdentifier()
     (
         type = DataType()
-        (
-            <NULL> { nullable = true; }
-        |
-            <NOT> <NULL> { nullable = false; }
-        |
-            { nullable = true; }
-        )
+        nullable = NullableOptDefaultTrue()
         (
             [ <GENERATED> <ALWAYS> ] <AS> <LPAREN>
             e = Expression(ExprContext.ACCEPT_SUB_QUERY) <RPAREN>
@@ -246,13 +240,7 @@ void AttributeDef(List<SqlNode> list) :
     id = SimpleIdentifier()
     (
         type = DataType()
-        (
-            <NULL> { nullable = true; }
-        |
-            <NOT> <NULL> { nullable = false; }
-        |
-            { nullable = true; }
-        )
+        nullable = NullableOptDefaultTrue()
     )
     [ <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) ]
     {
@@ -449,5 +437,3 @@ SqlDrop SqlDropFunction(Span s, boolean replace) :
         return SqlDdlNodes.dropFunction(s.end(this), ifExists, id);
     }
 }
-
-// End parserImpls.ftl
