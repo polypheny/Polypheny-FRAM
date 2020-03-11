@@ -41,4 +41,16 @@ public class SqlDdlAlterNodes {
     public static SqlAlterSchema alterSchema( SqlParserPos pos, SqlIdentifier schemaName, SqlIdentifier newName ) {
         return new SqlAlterSchema( pos, schemaName, newName );
     }
+
+
+    public static class AlterTable {
+
+        private AlterTable() {
+        }
+
+
+        public static SqlAlterTable rename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier newName ) {
+            return new SqlAlterTable( pos, tableName, newName );
+        }
+    }
 }

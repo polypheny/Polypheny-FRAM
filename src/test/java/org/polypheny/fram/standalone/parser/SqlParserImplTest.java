@@ -87,6 +87,13 @@ public class SqlParserImplTest extends SqlParserTest {
                 .ok( "ALTER SCHEMA `FOO` RENAME TO `BAR`" );
     }
 
+
+    @Test
+    public void testAlterTableRename() {
+        sql( "alter table foo rename to bar" )
+                .ok( "ALTER TABLE `FOO` RENAME TO `BAR`" );
+    }
+
 // /// MODIFICATION END
 
 

@@ -28,6 +28,8 @@ SqlDdlAlter SqlDdlAlter() :
         alter = SqlAlterIndex(s)
     |
         alter = SqlAlterSchema(s)
+    |
+        alter = SqlAlterTable(s)
     )
     {
         return alter;
@@ -40,7 +42,7 @@ SqlDdlAlter SqlAlterIndex(Span s) :
     final SqlIdentifier newName;
 }
 {
-    <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = CompoundIdentifier() {
+    <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier() {
         return SqlDdlAlterNodes.alterIndex(s.end(this), id, newName);
     }
 }
@@ -51,7 +53,25 @@ SqlDdlAlter SqlAlterSchema(Span s) :
     final SqlIdentifier newName;
 }
 {
-    <SCHEMA> id = CompoundIdentifier() <RENAME> <TO> newName = CompoundIdentifier() {
+    <SCHEMA> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier() {
         return SqlDdlAlterNodes.alterSchema(s.end(this), id, newName);
+    }
+}
+
+SqlDdlAlter SqlAlterTable(Span s) :
+{
+    final SqlIdentifier id;
+    final SqlDdlAlter alterTable;
+    final SqlIdentifier newName;
+}
+{
+    <TABLE> id = CompoundIdentifier()
+    (
+        <RENAME> <TO> newName = SimpleIdentifier() {
+            alterTable = SqlDdlAlterNodes.AlterTable.rename(s.end(this), id, newName);
+        }
+    )
+    {
+        return alterTable;
     }
 }
