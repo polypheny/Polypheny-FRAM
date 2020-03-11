@@ -15,37 +15,30 @@
 -->
 
 /**
- * Parses a Control statement ({@code COMMIT} or {@code ROLLBACK}).
+ * Parses a {@code ALTER} DDL statement.
  */
-SqlCtrl SqlCtrl() :
+SqlDdlAlter SqlDdlAlter() :
 {
-    final SqlCtrl ctrl;
+    final Span s;
+    final SqlDdlAlter alter;
 }
 {
+    <ALTER> { s = span(); }
     (
-        ctrl = SqlCommit()
-    |
-        ctrl = SqlRollback()
+        alter = SqlAlterIndex(s)
     )
-    { return ctrl; }
-}
-
-SqlCtrl SqlCommit() :
-{
-}
-{
-    <COMMIT>
     {
-        return SqlCtrlNodes.commit(span().end(this));
+        return alter;
     }
 }
 
-SqlCtrl SqlRollback() :
+SqlDdlAlter SqlAlterIndex(Span s) :
 {
+    final SqlIdentifier id;
+    final SqlIdentifier newName;
 }
 {
-    <ROLLBACK>
-    {
-        return SqlCtrlNodes.rollback(span().end(this));
+    <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = CompoundIdentifier() {
+        return SqlDdlAlterNodes.alterIndex(s.end(this), id, newName);
     }
 }

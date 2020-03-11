@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 // /// MODIFICATION START
+
 package org.polypheny.fram.standalone.parser;
 // /// MODIFICATION END
 
 import org.apache.calcite.sql.parser.SqlParserImplFactory;
 import org.apache.calcite.sql.parser.SqlParserTest;
-import org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl;
 import org.junit.jupiter.api.Test;
 
 
@@ -45,17 +45,21 @@ import org.junit.jupiter.api.Test;
  *
  * </ul>
  */
+@SuppressWarnings({
+        "squid:S2699" // "Tests should include assertions" - Justification: This is a file modified from the Apache Calcite project.
+})
 public class SqlParserImplTest extends SqlParserTest {
 
     @Override
     protected SqlParserImplFactory parserImplFactory() {
 // /// MODIFICATION START
-        return SqlDdlParserImpl.FACTORY;
+        return org.polypheny.fram.standalone.parser.SqlParserImpl.FACTORY;
 // /// MODIFICATION END
     }
 
+// /// MODIFICATION START
 
-    // /// MODIFICATION START
+
     @Test
     public void testCommit() {
         sql( "commit" )
@@ -68,6 +72,14 @@ public class SqlParserImplTest extends SqlParserTest {
         sql( "rollback" )
                 .ok( "ROLLBACK" );
     }
+
+
+    @Test
+    public void testAlterIndex() {
+        sql( "alter index foo rename to bar" )
+                .ok( "ALTER INDEX `FOO` RENAME TO `BAR`" );
+    }
+
 // /// MODIFICATION END
 
 
