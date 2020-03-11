@@ -33,4 +33,12 @@ public class SqlDdlAlterNodes {
     public static SqlAlterIndex alterIndex( SqlParserPos pos, SqlIdentifier indexName, SqlIdentifier newName ) {
         return new SqlAlterIndex( pos, indexName, newName );
     }
+
+
+    /**
+     * Creates a ALTER SCHEMA.
+     */
+    public static SqlAlterSchema alterSchema( SqlParserPos pos, SqlIdentifier schemaName, SqlIdentifier newName ) {
+        return new SqlAlterSchema( pos, schemaName, newName );
+    }
 }

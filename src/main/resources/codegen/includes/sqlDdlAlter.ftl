@@ -26,6 +26,8 @@ SqlDdlAlter SqlDdlAlter() :
     <ALTER> { s = span(); }
     (
         alter = SqlAlterIndex(s)
+    |
+        alter = SqlAlterSchema(s)
     )
     {
         return alter;
@@ -40,5 +42,16 @@ SqlDdlAlter SqlAlterIndex(Span s) :
 {
     <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = CompoundIdentifier() {
         return SqlDdlAlterNodes.alterIndex(s.end(this), id, newName);
+    }
+}
+
+SqlDdlAlter SqlAlterSchema(Span s) :
+{
+    final SqlIdentifier id;
+    final SqlIdentifier newName;
+}
+{
+    <SCHEMA> id = CompoundIdentifier() <RENAME> <TO> newName = CompoundIdentifier() {
+        return SqlDdlAlterNodes.alterSchema(s.end(this), id, newName);
     }
 }
