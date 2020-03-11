@@ -18,10 +18,10 @@ package org.polypheny.fram.standalone.transaction;
 
 
 import java.util.UUID;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 
 /**
@@ -37,7 +37,7 @@ public class TransactionHandleTest {
     private UUID transactionId;
 
 
-    @Before
+    @BeforeEach
     public void beforeTest() {
         nodeId = UUID.randomUUID();
         userId = UUID.randomUUID();
@@ -46,7 +46,7 @@ public class TransactionHandleTest {
     }
 
 
-    @After
+    @AfterEach
     public void afterTest() {
         nodeId = null;
         userId = null;
@@ -70,7 +70,7 @@ public class TransactionHandleTest {
         final UUID actualConnectionId = testSubject.getConnectionId();
         final UUID actualTransactionId = testSubject.getTransactionId();
 
-        Assert.assertArrayEquals( new UUID[]{ expectedNodeId, expectedUserId, expectedConnectionId, expectedTransactionId }, new UUID[]{ actualNodeId, actualUserId, actualConnectionId, actualTransactionId } );
+        Assertions.assertArrayEquals( new UUID[]{ expectedNodeId, expectedUserId, expectedConnectionId, expectedTransactionId }, new UUID[]{ actualNodeId, actualUserId, actualConnectionId, actualTransactionId } );
     }
 
 
@@ -85,7 +85,7 @@ public class TransactionHandleTest {
                 + "}";
 
         final String actual = testSubject.toString();
-        Assert.assertEquals( expected, actual );
+        Assertions.assertEquals( expected, actual );
     }
 
 
@@ -96,7 +96,7 @@ public class TransactionHandleTest {
         TransactionHandle testSubject = TransactionHandle.generateLocalTransactionIdentifier( nodeId, transactionId );
         final boolean actual = testSubject.isLocalTransactionIdentifier();
 
-        Assert.assertEquals( expected, actual );
+        Assertions.assertEquals( expected, actual );
     }
 
 
@@ -107,7 +107,7 @@ public class TransactionHandleTest {
         TransactionHandle testSubject = TransactionHandle.generateGlobalTransactionIdentifier( nodeId, userId, connectionId, transactionId );
         final boolean actual = testSubject.isLocalTransactionIdentifier();
 
-        Assert.assertEquals( expected, actual );
+        Assertions.assertEquals( expected, actual );
     }
 
 
@@ -118,6 +118,6 @@ public class TransactionHandleTest {
         TransactionHandle testSubject = TransactionHandle.generateBranchTransactionIdentifier( TransactionHandle.generateGlobalTransactionIdentifier( nodeId, userId, connectionId, transactionId ), nodeId );
         final boolean actual = testSubject.isLocalTransactionIdentifier();
 
-        Assert.assertEquals( expected, actual );
+        Assertions.assertEquals( expected, actual );
     }
 }

@@ -17,19 +17,6 @@
 package org.polypheny.fram.protocols.replication;
 
 
-import org.polypheny.fram.protocols.AbstractProtocol;
-import org.polypheny.fram.protocols.Protocol.ReplicationProtocol;
-import org.polypheny.fram.remote.Cluster;
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import org.polypheny.fram.standalone.ConnectionInfos;
-import org.polypheny.fram.standalone.ResultSetInfos;
-import org.polypheny.fram.standalone.StatementInfos;
-import org.polypheny.fram.standalone.TransactionInfos;
 import java.rmi.RemoteException;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
@@ -54,6 +41,19 @@ import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
+import org.polypheny.fram.protocols.AbstractProtocol;
+import org.polypheny.fram.protocols.Protocol.ReplicationProtocol;
+import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.remote.RemoteNode;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.ResultSetInfos;
+import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.TransactionInfos;
 
 
 public class QuorumReplication extends AbstractProtocol implements ReplicationProtocol {
@@ -105,7 +105,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteResult prepareAndExecuteDataDefinition( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
         final Collection<RemoteNode> quorum = this.getAllNodes( cluster );
 
         connection.addAccessedNodes( quorum );
@@ -116,7 +115,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
         }
 
-        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, maxRowsInFirstFrame, quorum );
+        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
         final List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -134,7 +133,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteResult prepareAndExecuteDataManipulation( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
         final Collection<RemoteNode> quorum = this.getWriteQuorum( cluster );
 
         connection.addAccessedNodes( quorum );
@@ -145,7 +143,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             LOGGER.trace( "prepareAndExecute[DataManipulation] on {}", quorum );
         }
 
-        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, maxRowsInFirstFrame, quorum );
+        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
         final List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -163,7 +161,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteResult prepareAndExecuteDataQuery( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
         final Collection<RemoteNode> quorum = this.getReadQuorum( cluster );
 
         connection.addAccessedNodes( quorum );
@@ -174,7 +171,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             LOGGER.trace( "prepareAndExecute[DataQuery] on {}", quorum );
         }
 
-        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, maxRowsInFirstFrame, quorum );
+        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
         final List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -192,15 +189,13 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteResult prepareAndExecuteTransactionCommit( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
-
         final Collection<RemoteNode> accessedNodes = transaction.getAccessedNodes();
 
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepareAndExecute[TransactionCommit] on {}", accessedNodes );
         }
 
-        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
+        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
         final List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -218,15 +213,13 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteResult prepareAndExecuteTransactionRollback( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
-
         final Collection<RemoteNode> accessedNodes = transaction.getAccessedNodes();
 
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepareAndExecute[TransactionRollback] on {}", accessedNodes );
         }
 
-        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
+        final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
         final List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -244,7 +237,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public StatementInfos prepareDataManipulation( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
         final Collection<RemoteNode> quorum = this.getWriteQuorum( cluster );
 
         connection.addAccessedNodes( quorum );
@@ -254,7 +246,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             LOGGER.trace( "prepare[DataManipulation] on {}", quorum );
         }
 
-        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, quorum );
+        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
         final List<Entry<RemoteNode, RemoteStatementHandle>> remoteStatements = new LinkedList<>();
 
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
@@ -270,7 +262,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public StatementInfos prepareDataQuery( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        final String generatedSql = sql.toSqlString( cluster.getLocalNode().getSqlDialect() ).getSql();
         final Collection<RemoteNode> quorum = this.getReadQuorum( cluster );
 
         connection.addAccessedNodes( quorum );
@@ -280,7 +271,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             LOGGER.trace( "prepare[DataQuery] on {}", quorum );
         }
 
-        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), generatedSql, maxRowCount, quorum );
+        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
         final List<Entry<RemoteNode, RemoteStatementHandle>> remoteStatements = new LinkedList<>();
 
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
