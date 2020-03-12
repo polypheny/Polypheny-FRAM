@@ -129,6 +129,14 @@ SqlDdlAlter SqlAlterTable(Span s) :
              }
         )
     |
+        <ALTER> <COLUMN> columnName = SimpleIdentifier()
+        (
+            <RENAME> <TO> newName = SimpleIdentifier()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.alterColumnRename(s.end(this), id, columnName, newName);
+            }
+        )
+    |
         <DROP>
         (
             (

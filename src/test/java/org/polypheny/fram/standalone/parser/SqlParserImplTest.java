@@ -375,6 +375,13 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAlterColumnRename() {
+        sql( "alter table foo alter column bar rename to foobar" )
+                .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` RENAME TO `FOOBAR`" );
+    }
+
+
+    @Test
     public void testAlterTableDropColumn1() {
         sql( "alter table foo drop column bar" )
                 .ok( "ALTER TABLE `FOO` DROP COLUMN `BAR`" );

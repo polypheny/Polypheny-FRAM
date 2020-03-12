@@ -200,7 +200,7 @@ dependencies {
 
 
 task fmpp(group: 'javacc') {
-    inputs.files(fileTree("${extractedDir}/main/resources/codegen/includes"), file("${resourcesSrcDir}/codegen/config.fmpp"))
+    inputs.files(fileTree("${extractedDir}/main/resources/codegen/includes/").files, file("${resourcesSrcDir}/codegen/config.fmpp"))
     outputs.dir(file("${generatedDir}/main/fmpp"))
 
     doLast {

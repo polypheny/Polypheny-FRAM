@@ -71,7 +71,6 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
         protected SqlAlterTableAddConstraint( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName ) {
             super( pos, tableName );
-
             this.constraintName = constraintName; // nullable
         }
 
@@ -109,7 +108,6 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
         public SqlAlterTableAddCheck( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNode condition ) {
             super( pos, tableName, constraintName );
-
             this.condition = Objects.requireNonNull( condition );
         }
 
@@ -150,7 +148,6 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
         public SqlAlterTableAddForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
             super( pos, tableName, constraintName );
-
             this.columnList = Objects.requireNonNull( columnList );
             this.refName = Objects.requireNonNull( refName );
             this.refColumnList = Objects.requireNonNull( refColumnList );
@@ -225,7 +222,6 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
         public SqlAlterTableAddPrimaryKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
             super( pos, tableName, constraintName );
-
             this.columnList = Objects.requireNonNull( columnList );
         }
 
@@ -264,7 +260,6 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
         public SqlAlterTableAddUnique( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
             super( pos, tableName, constraintName );
-
             this.columnList = Objects.requireNonNull( columnList );
         }
 
@@ -288,6 +283,70 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
                 columnList.unparse( writer, leftPrec, rightPrec );
                 writer.endList( list );
             }
+        }
+    }
+
+
+    protected abstract static class SqlAlterTableAlterColumn extends SqlAlterTable {
+
+        protected final SqlIdentifier columnName;
+
+
+        protected SqlAlterTableAlterColumn( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName ) {
+            super( pos, tableName );
+            this.columnName = Objects.requireNonNull( columnName );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnName )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
+            writer.keyword( "ALTER" );
+            writer.keyword( "COLUMN" );
+            columnName.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
+    /**
+     * {@code ALTER TABLE <tablename> ALTER COLUMN <columnname> RENAME TO <newname>;}
+     */
+    public static class SqlAlterTableAlterColumnRename extends SqlAlterTableAlterColumn {
+
+        private final SqlIdentifier newName;
+
+
+        public SqlAlterTableAlterColumnRename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, SqlIdentifier newName ) {
+            super( pos, tableName, columnName );
+            this.newName = Objects.requireNonNull( newName );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( newName )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "RENAME" );
+            writer.keyword( "TO" );
+            newName.unparse( writer, leftPrec, rightPrec );
         }
     }
 
