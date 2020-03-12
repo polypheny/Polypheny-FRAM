@@ -437,3 +437,21 @@ SqlDrop SqlDropFunction(Span s, boolean replace) :
         return SqlDdlNodes.dropFunction(s.end(this), ifExists, id);
     }
 }
+
+
+// /// MODIFICATIONS START
+
+
+SqlCreate SqlCreateIndex(Span s, boolean replace) :
+{
+    final SqlIdentifier id;
+    final SqlIdentifier table;
+    final SqlNodeList columns;
+}
+{
+    <INDEX> { if (replace) throw new ParseException("\"OR\" \"REPLACE\" cannot be combined with \"CREATE\" \"INDEX\"."); }
+    id = SimpleIdentifier() <ON> table = CompoundIdentifier() columns = ParenthesizedSimpleIdentifierList()
+    {
+        return SqlDdlIndexNodes.createIndex(s.end(this), id, table, columns);
+    }
+}

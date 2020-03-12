@@ -457,6 +457,20 @@ public class SqlParserImplTest extends SqlParserTest {
                 .ok( "ALTER TABLE `FOO` RENAME TO `BAR`" );
     }
 
+
+    @Test
+    public void testCreateIndex() {
+        sql( "create index foo on bar (id1, id2)" )
+                .ok( "CREATE INDEX `FOO` ON `BAR` (`ID1`, `ID2`)" );
+    }
+
+
+    @Test
+    public void testCreateOrReplaceIndex() {
+        sql( "create or replace index foo on bar (id1, id2)" )
+                .fails( "\"OR\" \"REPLACE\" cannot be combined with \"CREATE\" \"INDEX\"." );
+    }
+
 // /// MODIFICATION END
 
 

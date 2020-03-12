@@ -54,6 +54,7 @@ data: {
         "org.polypheny.fram.standalone.parser.sql.SqlDdlAlter"
         "org.polypheny.fram.standalone.parser.sql.ctrl.SqlCtrlNodes"
         "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlAlterNodes"
+        "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlIndexNodes"
 # ### MODIFICATION END
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
@@ -459,6 +460,9 @@ data: {
       "SqlCreateType"
       "SqlCreateView"
       "SqlCreateFunction"
+# ### MODIFICATION START
+      "SqlCreateIndex"
+# ### MODIFICATION END
     ]
 
     # List of methods for parsing extensions to "DROP" calls.
