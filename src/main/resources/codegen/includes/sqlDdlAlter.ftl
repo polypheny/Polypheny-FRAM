@@ -81,34 +81,41 @@ SqlDdlAlter SqlAlterTable(Span s) :
         |
             { constraintName = null; }
         )
-        <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
         (
-            <ON> <DELETE>
+            <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
             (
-                <CASCADE> { onDelete = "CASCADE"; }
+                <ON> <DELETE>
+                (
+                    <CASCADE> { onDelete = "CASCADE"; }
+                |
+                    <SET> <DEFAULT_> { onDelete = "SET DEFAULT"; }
+                |
+                    <SET> <NULL> { onDelete = "SET NULL"; }
+                )
             |
-                <SET> <DEFAULT_> { onDelete = "SET DEFAULT"; }
-            |
-                <SET> <NULL> { onDelete = "SET NULL"; }
+                { onDelete = null; }
             )
-        |
-            { onDelete = null; }
-        )
-        (
-            <ON> <UPDATE>
             (
-                <CASCADE> { onUpdate = "CASCADE"; }
+                <ON> <UPDATE>
+                (
+                    <CASCADE> { onUpdate = "CASCADE"; }
+                |
+                    <SET> <DEFAULT_> { onUpdate = "SET DEFAULT"; }
+                |
+                    <SET> <NULL> { onUpdate = "SET NULL"; }
+                )
             |
-                <SET> <DEFAULT_> { onUpdate = "SET DEFAULT"; }
-            |
-                <SET> <NULL> { onUpdate = "SET NULL"; }
+                { onUpdate = null; }
             )
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.addForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
+            }
         |
-            { onUpdate = null; }
+            <PRIMARY> <KEY> columnList = ParenthesizedSimpleIdentifierList()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.addPrimaryKey(s.end(this), id, constraintName, columnList);
+            }
         )
-        {
-            alterTable = SqlDdlAlterNodes.AlterTable.addForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
-        }
     |
         <DROP> <CONSTRAINT> constraintName = SimpleIdentifier()
         {

@@ -291,6 +291,13 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAddPrimaryKey1() {
+        sql( "alter table foo add constraint foobar primary key (id1, id2)" )
+                .ok( "ALTER TABLE `FOO` ADD CONSTRAINT `FOOBAR` PRIMARY KEY (`ID1`, `ID2`)" );
+    }
+
+
+    @Test
     public void testAlterTableDropConstraint() {
         sql( "alter table foo drop constraint bar" )
                 .ok( "ALTER TABLE `FOO` DROP CONSTRAINT `BAR`" );

@@ -153,6 +153,53 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> ADD [CONSTRAINT <constraintname>]
+     * PRIMARY KEY (<column list>);}
+     */
+    public static class SqlAlterTableAddPrimaryKey extends SqlAlterTable {
+
+        private final SqlIdentifier constraintName;
+        private final SqlNodeList columnList;
+
+
+        public SqlAlterTableAddPrimaryKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
+            super( pos, tableName );
+
+            this.constraintName = constraintName; // nullable
+            this.columnList = Objects.requireNonNull( columnList );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( constraintName, columnList )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
+            writer.keyword( "ADD" );
+            if ( constraintName != null ) {
+                writer.keyword( "CONSTRAINT" );
+                constraintName.unparse( writer, leftPrec, rightPrec );
+            }
+            writer.keyword( "PRIMARY" );
+            writer.keyword( "KEY" );
+            {//NOSONAR "squid:S1199" - Justification: better readability
+                final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
+                columnList.unparse( writer, leftPrec, rightPrec );
+                writer.endList( list );
+            }
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename> DROP CONSTRAINT <constraintname>;}
      */
     public static class SqlAlterTableDropConstraint extends SqlAlterTable {
