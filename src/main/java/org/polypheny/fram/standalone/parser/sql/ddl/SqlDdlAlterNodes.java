@@ -18,6 +18,7 @@ package org.polypheny.fram.standalone.parser.sql.ddl;
 
 
 import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.parser.SqlParserPos;
 
 
@@ -51,6 +52,11 @@ public class SqlDdlAlterNodes {
 
         public static SqlAlterTable rename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier newName ) {
             return new SqlAlterTable( pos, tableName, newName );
+        }
+
+
+        public static SqlAlterTable addForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+            return new SqlAlterTable( pos, tableName, constraintName, columnList, refName, refColumnList, onDelete, onUpdate );
         }
     }
 }

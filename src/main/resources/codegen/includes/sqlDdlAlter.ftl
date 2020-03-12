@@ -42,7 +42,8 @@ SqlDdlAlter SqlAlterIndex(Span s) :
     final SqlIdentifier newName;
 }
 {
-    <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier() {
+    <INDEX> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier()
+    {
         return SqlDdlAlterNodes.alterIndex(s.end(this), id, newName);
     }
 }
@@ -53,7 +54,8 @@ SqlDdlAlter SqlAlterSchema(Span s) :
     final SqlIdentifier newName;
 }
 {
-    <SCHEMA> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier() {
+    <SCHEMA> id = CompoundIdentifier() <RENAME> <TO> newName = SimpleIdentifier()
+    {
         return SqlDdlAlterNodes.alterSchema(s.end(this), id, newName);
     }
 }
@@ -63,12 +65,54 @@ SqlDdlAlter SqlAlterTable(Span s) :
     final SqlIdentifier id;
     final SqlDdlAlter alterTable;
     final SqlIdentifier newName;
+    final SqlIdentifier constraintName;
+    final SqlNodeList columnList;
+    final SqlIdentifier refName;
+    final SqlNodeList refColumnList;
+    final String onDelete;
+    final String onUpdate;
 }
 {
     <TABLE> id = CompoundIdentifier()
     (
-        <RENAME> <TO> newName = SimpleIdentifier() {
+        <RENAME> <TO> newName = SimpleIdentifier()
+        {
             alterTable = SqlDdlAlterNodes.AlterTable.rename(s.end(this), id, newName);
+        }
+    |
+        <ADD>
+        (
+            <CONSTRAINT> constraintName = SimpleIdentifier()
+        |
+            { constraintName = null; }
+        )
+        <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
+        (
+            <ON> <DELETE>
+            (
+                <CASCADE> { onDelete = "CASCADE"; }
+            |
+                <SET> <DEFAULT_> { onDelete = "SET DEFAULT"; }
+            |
+                <SET> <NULL> { onDelete = "SET NULL"; }
+            )
+        |
+            { onDelete = null; }
+        )
+        (
+            <ON> <UPDATE>
+            (
+                <CASCADE> { onUpdate = "CASCADE"; }
+            |
+                <SET> <DEFAULT_> { onUpdate = "SET DEFAULT"; }
+            |
+                <SET> <NULL> { onUpdate = "SET NULL"; }
+            )
+        |
+            { onUpdate = null; }
+        )
+        {
+            alterTable = SqlDdlAlterNodes.AlterTable.addForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
         }
     )
     {

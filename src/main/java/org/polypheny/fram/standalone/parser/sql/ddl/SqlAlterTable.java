@@ -23,9 +23,11 @@ import javax.annotation.Nonnull;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.SqlWriter.FrameTypeEnum;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.ImmutableNullableList;
 import org.polypheny.fram.standalone.parser.sql.SqlDdlAlter;
@@ -39,13 +41,40 @@ public class SqlAlterTable extends SqlDdlAlter {
     private static final SqlOperator OPERATOR = new SqlSpecialOperator( "ALTER TABLE", SqlKind.ALTER_TABLE );
 
     private final SqlIdentifier tableName;
-    private final SqlIdentifier newName;
+    private final SqlAlterTableType type;
+
+    // RENAME:
+    private SqlIdentifier newName;
+
+    // ADD FOREIGN KEY
+    private SqlIdentifier constraintName;
+    private SqlNodeList columnList;
+    private SqlIdentifier refName;
+    private SqlNodeList refColumnList;
+    private SqlAlterTableForeignKeyOption onDelete;
+    private SqlAlterTableForeignKeyOption onUpdate;
 
 
     public SqlAlterTable( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier newName ) {
         super( OPERATOR, pos );
         this.tableName = Objects.requireNonNull( tableName );
+
+        this.type = SqlAlterTableType.RENAME;
         this.newName = Objects.requireNonNull( newName );
+    }
+
+
+    public SqlAlterTable( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+        super( OPERATOR, pos );
+        this.tableName = Objects.requireNonNull( tableName );
+
+        this.type = SqlAlterTableType.ADD_FOREIGN_KEY;
+        this.constraintName = constraintName; // nullable
+        this.columnList = Objects.requireNonNull( columnList );
+        this.refName = Objects.requireNonNull( refName );
+        this.refColumnList = Objects.requireNonNull( refColumnList );
+        this.onDelete = onDelete == null ? null : SqlAlterTableForeignKeyOption.valueOf( onDelete.toUpperCase().replace( ' ', '_' ) );
+        this.onUpdate = onUpdate == null ? null : SqlAlterTableForeignKeyOption.valueOf( onUpdate.toUpperCase().replace( ' ', '_' ) );
     }
 
 
@@ -54,9 +83,59 @@ public class SqlAlterTable extends SqlDdlAlter {
         writer.keyword( "ALTER" );
         writer.keyword( "TABLE" );
         tableName.unparse( writer, leftPrec, rightPrec );
+
+        switch ( type ) {
+            case RENAME:
+                unparseRename( writer, leftPrec, rightPrec );
+                break;
+
+            case ADD_FOREIGN_KEY:
+                unparseAddForeignKey( writer, leftPrec, rightPrec );
+                break;
+
+            default:
+                throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+    }
+
+
+    private void unparseRename( SqlWriter writer, int leftPrec, int rightPrec ) {
         writer.keyword( "RENAME" );
         writer.keyword( "TO" );
         newName.unparse( writer, leftPrec, rightPrec );
+    }
+
+
+    private void unparseAddForeignKey( SqlWriter writer, int leftPrec, int rightPrec ) {
+        writer.keyword( "ADD" );
+        if ( constraintName != null ) {
+            writer.keyword( "CONSTRAINT" );
+            constraintName.unparse( writer, leftPrec, rightPrec );
+        }
+        writer.keyword( "FOREIGN" );
+        writer.keyword( "KEY" );
+        {//NOSONAR "squid:S1199" - Justification: better readability
+            final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
+            columnList.unparse( writer, leftPrec, rightPrec );
+            writer.endList( list );
+        }
+        writer.keyword( "REFERENCES" );
+        refName.unparse( writer, leftPrec, rightPrec );
+        {//NOSONAR "squid:S1199" - Justification: better readability
+            final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
+            refColumnList.unparse( writer, leftPrec, rightPrec );
+            writer.endList( list );
+        }
+        if ( onDelete != null ) {
+            writer.keyword( "ON" );
+            writer.keyword( "DELETE" );
+            writer.keyword( onDelete.toString() );
+        }
+        if ( onUpdate != null ) {
+            writer.keyword( "ON" );
+            writer.keyword( "UPDATE" );
+            writer.keyword( onUpdate.toString() );
+        }
     }
 
 
@@ -64,5 +143,25 @@ public class SqlAlterTable extends SqlDdlAlter {
     @Override
     public List<SqlNode> getOperandList() {
         return ImmutableNullableList.of( tableName, newName );
+    }
+
+
+    private enum SqlAlterTableType {
+        RENAME,
+        ADD_FOREIGN_KEY,
+    }
+
+
+    private enum SqlAlterTableForeignKeyOption {
+        CASCADE,
+        SET_DEFAULT,
+        SET_NULL,
+        ;
+
+
+        @Override
+        public String toString() {
+            return super.toString().replace( '_', ' ' );
+        }
     }
 }
