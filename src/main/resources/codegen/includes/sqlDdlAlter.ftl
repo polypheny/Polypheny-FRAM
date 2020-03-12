@@ -63,7 +63,7 @@ SqlDdlAlter SqlAlterSchema(Span s) :
 SqlDdlAlter SqlAlterTable(Span s) :
 {
     final SqlIdentifier id;
-    final SqlIdentifier constraintName;
+    SqlIdentifier constraintName = null;
     final SqlIdentifier newName;
     final SqlIdentifier refName;
     final SqlIdentifier columnName;
@@ -72,8 +72,8 @@ SqlDdlAlter SqlAlterTable(Span s) :
     final SqlNode defaultValue;
     final SqlNodeList columnList;
     final SqlNodeList refColumnList;
-    final String onDelete;
-    final String onUpdate;
+    String onDelete = null;
+    String onUpdate = null;
     final SqlDdlAlter alterTable;
 }
 {
@@ -81,20 +81,12 @@ SqlDdlAlter SqlAlterTable(Span s) :
     (
         <ADD>
         (
-            (
-                <COLUMN> columnDefinition = ColumnDefinition()
-            |
-                columnDefinition = ColumnDefinition()
-            )
+            [ <COLUMN> ] columnDefinition = ColumnDefinition()
             {
                 alterTable = SqlDdlAlterNodes.AlterTable.addColumn(s.end(this), id, columnDefinition);
             }
         |
-            (
-                <CONSTRAINT> constraintName = SimpleIdentifier()
-            |
-                { constraintName = null; }
-            )
+            [ <CONSTRAINT> constraintName = SimpleIdentifier() ]
             (
                 <CHECK> condition = ParenthesizedExpression(ExprContext.ACCEPT_NON_QUERY)
                 {
@@ -102,7 +94,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
                 }
                 |
                 <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
-                (
+                [
                     <ON> <DELETE>
                     (
                         <CASCADE> { onDelete = "CASCADE"; }
@@ -111,10 +103,8 @@ SqlDdlAlter SqlAlterTable(Span s) :
                     |
                         <SET> <NULL> { onDelete = "SET NULL"; }
                     )
-                |
-                    { onDelete = null; }
-                )
-                (
+                ]
+                [
                     <ON> <UPDATE>
                     (
                         <CASCADE> { onUpdate = "CASCADE"; }
@@ -123,9 +113,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
                     |
                         <SET> <NULL> { onUpdate = "SET NULL"; }
                     )
-                |
-                    { onUpdate = null; }
-                )
+                ]
                 {
                     alterTable = SqlDdlAlterNodes.AlterTable.addConstraintForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
                 }
@@ -178,11 +166,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
     |
         <DROP>
         (
-            (
-                <COLUMN> columnName = SimpleIdentifier()
-            |
-                columnName = SimpleIdentifier()
-            )
+            [ <COLUMN> ] columnName = SimpleIdentifier()
             {
                 alterTable = SqlDdlAlterNodes.AlterTable.dropColumn(s.end(this), id, columnName);
             }
@@ -205,20 +189,19 @@ SqlDdlAlter SqlAlterTable(Span s) :
 
 SqlNode ColumnDefinition() :
 {
+    final Span s = Span.of();
     final SqlIdentifier id;
     final SqlDataTypeSpec type;
-    final boolean identity;
-    final boolean primaryKey;
-    final SqlNode defaultValue;
-    final SqlNode identityStart;
-    final SqlNode identityIncrement;
-    final SqlNode constraint;
-    final Span s = Span.of();
-    final ColumnStrategy strategy;
+    SqlNode defaultValue = null;
+//    boolean identity = false;
+//    SqlNode identityStart = null;
+//    SqlNode identityIncrement = null;
+//    boolean primaryKey = false;
+    ColumnStrategy strategy = ColumnStrategy.NULLABLE;
 }
 {
     id = SimpleIdentifier() type = DataType()
-    (
+    [
         <DEFAULT_> defaultValue = Expression(ExprContext.ACCEPT_NON_QUERY)
         {
             strategy = ColumnStrategy.DEFAULT;
@@ -246,23 +229,19 @@ SqlNode ColumnDefinition() :
             defaultValue = null;
             strategy = ColumnStrategy.NULLABLE;
         }
-    )
-/*    ( -- Currently not supported in Calcite's CREATE TABLE
+    ]
+/*    [ -- Currently not supported in Calcite's CREATE TABLE
         <IDENTITY>
         {
             identity = true;
         }
-    |
-        { identity = false; }
-    )*/
-/*    ( -- Currently not supported in Calcite's CREATE TABLE
+    ]*/
+/*    [ -- Currently not supported in Calcite's CREATE TABLE
         <PRIMARY> <KEY>
         {
             primaryKey = true;
         }
-    |
-        { primaryKey = false; }
-    )*/
+    ]*/
     {
         return SqlDdlNodes.column(s.add(id).end(this), id, type.withNullable(strategy == ColumnStrategy.DEFAULT ? null : strategy == ColumnStrategy.NULLABLE), defaultValue, strategy);
     }
