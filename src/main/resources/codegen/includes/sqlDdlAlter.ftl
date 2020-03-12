@@ -68,6 +68,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
     final SqlIdentifier refName;
     final SqlIdentifier columnName;
     final SqlNode condition;
+    final SqlNode defaultValue;
     final SqlNodeList columnList;
     final SqlNodeList refColumnList;
     final String onDelete;
@@ -134,6 +135,11 @@ SqlDdlAlter SqlAlterTable(Span s) :
             <RENAME> <TO> newName = SimpleIdentifier()
             {
                 alterTable = SqlDdlAlterNodes.AlterTable.alterColumnRename(s.end(this), id, columnName, newName);
+            }
+        |
+            <SET> <DEFAULT_> defaultValue = Literal()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetDefault(s.end(this), id, columnName, defaultValue);
             }
         )
     |

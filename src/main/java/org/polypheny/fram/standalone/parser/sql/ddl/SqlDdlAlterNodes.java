@@ -76,6 +76,11 @@ public class SqlDdlAlterNodes {
         }
 
 
+        public static SqlAlterTable alterColumnSetDefault( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, SqlNode defaultValue ) {
+            return new SqlAlterTable.SqlAlterTableAlterColumnSetDefault( pos, tableName, columnName, defaultValue );
+        }
+
+
         public static SqlAlterTable dropColumn( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName ) {
             return new SqlAlterTable.SqlAlterTableDropColumn( pos, tableName, columnName );
         }

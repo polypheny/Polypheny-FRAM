@@ -352,6 +352,39 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> ALTER COLUMN <columnname> SET DEFAULT <defaultvalue>};}
+     */
+    public static class SqlAlterTableAlterColumnSetDefault extends SqlAlterTableAlterColumn {
+
+        private final SqlNode defaultValue;
+
+
+        public SqlAlterTableAlterColumnSetDefault( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, SqlNode defaultValue ) {
+            super( pos, tableName, columnName );
+            this.defaultValue = Objects.requireNonNull( defaultValue );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( defaultValue )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "SET" );
+            writer.keyword( "DEFAULT" );
+            defaultValue.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename> DROP [COLUMN] <columnname>;}
      */
     public static class SqlAlterTableDropColumn extends SqlAlterTable {
