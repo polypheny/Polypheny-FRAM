@@ -65,6 +65,39 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
     }
 
 
+    /**
+     * {@code ALTER TABLE <tablename> ADD [COLUMN] <columnDefinition>;}
+     */
+    public static class SqlAlterTableAddColumn extends SqlAlterTable {
+
+        private final SqlNode columnDefinition;
+
+
+        public SqlAlterTableAddColumn( SqlParserPos pos, SqlIdentifier tableName, SqlNode columnDefinition ) {
+            super( pos, tableName );
+            this.columnDefinition = Objects.requireNonNull( columnDefinition );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnDefinition )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "ADD" );
+            writer.keyword( "COLUMN" );
+            columnDefinition.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
     protected static abstract class SqlAlterTableAddConstraint extends SqlAlterTable {
 
         protected final SqlIdentifier constraintName;

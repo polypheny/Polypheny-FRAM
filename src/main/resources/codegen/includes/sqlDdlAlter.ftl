@@ -81,54 +81,65 @@ SqlDdlAlter SqlAlterTable(Span s) :
     (
         <ADD>
         (
-            <CONSTRAINT> constraintName = SimpleIdentifier()
-        |
-            { constraintName = null; }
-        )
-        (
-            <CHECK> condition = ParenthesizedExpression(ExprContext.ACCEPT_NON_QUERY)
-            {
-                alterTable = SqlDdlAlterNodes.AlterTable.addCheck(s.end(this), id, constraintName, condition);
-            }
-            |
-            <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
             (
-                <ON> <DELETE>
-                (
-                    <CASCADE> { onDelete = "CASCADE"; }
-                |
-                    <SET> <DEFAULT_> { onDelete = "SET DEFAULT"; }
-                |
-                    <SET> <NULL> { onDelete = "SET NULL"; }
-                )
+                <COLUMN> columnDefinition = ColumnDefinition()
             |
-                { onDelete = null; }
-            )
-            (
-                <ON> <UPDATE>
-                (
-                    <CASCADE> { onUpdate = "CASCADE"; }
-                |
-                    <SET> <DEFAULT_> { onUpdate = "SET DEFAULT"; }
-                |
-                    <SET> <NULL> { onUpdate = "SET NULL"; }
-                )
-            |
-                { onUpdate = null; }
+                columnDefinition = ColumnDefinition()
             )
             {
-                alterTable = SqlDdlAlterNodes.AlterTable.addForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
+                alterTable = SqlDdlAlterNodes.AlterTable.addColumn(s.end(this), id, columnDefinition);
             }
         |
-            <PRIMARY> <KEY> columnList = ParenthesizedSimpleIdentifierList()
-            {
-                alterTable = SqlDdlAlterNodes.AlterTable.addPrimaryKey(s.end(this), id, constraintName, columnList);
-            }
-        |
-            <UNIQUE> columnList = ParenthesizedSimpleIdentifierList()
-             {
-                 alterTable = SqlDdlAlterNodes.AlterTable.addUnique(s.end(this), id, constraintName, columnList);
-             }
+            (
+                <CONSTRAINT> constraintName = SimpleIdentifier()
+            |
+                { constraintName = null; }
+            )
+            (
+                <CHECK> condition = ParenthesizedExpression(ExprContext.ACCEPT_NON_QUERY)
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.addConstraintCheck(s.end(this), id, constraintName, condition);
+                }
+                |
+                <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
+                (
+                    <ON> <DELETE>
+                    (
+                        <CASCADE> { onDelete = "CASCADE"; }
+                    |
+                        <SET> <DEFAULT_> { onDelete = "SET DEFAULT"; }
+                    |
+                        <SET> <NULL> { onDelete = "SET NULL"; }
+                    )
+                |
+                    { onDelete = null; }
+                )
+                (
+                    <ON> <UPDATE>
+                    (
+                        <CASCADE> { onUpdate = "CASCADE"; }
+                    |
+                        <SET> <DEFAULT_> { onUpdate = "SET DEFAULT"; }
+                    |
+                        <SET> <NULL> { onUpdate = "SET NULL"; }
+                    )
+                |
+                    { onUpdate = null; }
+                )
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.addConstraintForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
+                }
+            |
+                <PRIMARY> <KEY> columnList = ParenthesizedSimpleIdentifierList()
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.addConstraintPrimaryKey(s.end(this), id, constraintName, columnList);
+                }
+            |
+                <UNIQUE> columnList = ParenthesizedSimpleIdentifierList()
+                 {
+                     alterTable = SqlDdlAlterNodes.AlterTable.addConstraintUnique(s.end(this), id, constraintName, columnList);
+                 }
+            )
         )
     |
         <ALTER> <COLUMN>
@@ -198,7 +209,7 @@ SqlNode ColumnDefinition() :
     final SqlDataTypeSpec type;
     final boolean identity;
     final boolean primaryKey;
-    SqlNode defaultValue = null;
+    final SqlNode defaultValue;
     final SqlNode identityStart;
     final SqlNode identityIncrement;
     final SqlNode constraint;

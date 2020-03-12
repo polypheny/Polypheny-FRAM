@@ -354,6 +354,20 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAddColumn1() {
+        sql( "alter table foo add column bar integer not null" )
+                .ok( "ALTER TABLE `FOO` ADD COLUMN `BAR` INTEGER NOT NULL" );
+    }
+
+
+    @Test
+    public void testAlterTableAddColumn2() {
+        sql( "alter table foo add bar integer not null" )
+                .ok( "ALTER TABLE `FOO` ADD COLUMN `BAR` INTEGER NOT NULL" );
+    }
+
+
+    @Test
     public void testAlterTableAddForeignKey1() {
         sql( "alter table foo add constraint foobar foreign key (id1, id2) references bar (id1, id2) on delete set default on update set null" )
                 .ok( "ALTER TABLE `FOO` ADD CONSTRAINT `FOOBAR` FOREIGN KEY (`ID1`, `ID2`) REFERENCES `BAR` (`ID1`, `ID2`) ON DELETE SET DEFAULT ON UPDATE SET NULL" );

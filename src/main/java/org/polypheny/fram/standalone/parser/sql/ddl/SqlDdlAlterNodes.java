@@ -52,22 +52,27 @@ public class SqlDdlAlterNodes {
         }
 
 
-        public static SqlAlterTable addCheck( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNode condition ) {
+        public static SqlAlterTable addColumn( SqlParserPos pos, SqlIdentifier tableName, SqlNode columnDefinition ) {
+            return new SqlAlterTable.SqlAlterTableAddColumn( pos, tableName, columnDefinition );
+        }
+
+
+        public static SqlAlterTable addConstraintCheck( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNode condition ) {
             return new SqlAlterTable.SqlAlterTableAddCheck( pos, tableName, constraintName, condition );
         }
 
 
-        public static SqlAlterTable addForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+        public static SqlAlterTable addConstraintForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
             return new SqlAlterTable.SqlAlterTableAddForeignKey( pos, tableName, constraintName, columnList, refName, refColumnList, onDelete, onUpdate );
         }
 
 
-        public static SqlAlterTable addPrimaryKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
+        public static SqlAlterTable addConstraintPrimaryKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
             return new SqlAlterTable.SqlAlterTableAddPrimaryKey( pos, tableName, constraintName, columnList );
         }
 
 
-        public static SqlAlterTable addUnique( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
+        public static SqlAlterTable addConstraintUnique( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
             return new SqlAlterTable.SqlAlterTableAddUnique( pos, tableName, constraintName, columnList );
         }
 
