@@ -293,6 +293,39 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> DROP [COLUMN] <columnname>;}
+     */
+    public static class SqlAlterTableDropColumn extends SqlAlterTable {
+
+        private final SqlIdentifier columnName;
+
+
+        public SqlAlterTableDropColumn( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName ) {
+            super( pos, tableName );
+            this.columnName = Objects.requireNonNull( columnName );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnName )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "DROP" );
+            writer.keyword( "COLUMN" );
+            columnName.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename> DROP CONSTRAINT <constraintname>;}
      */
     public static class SqlAlterTableDropConstraint extends SqlAlterTable {

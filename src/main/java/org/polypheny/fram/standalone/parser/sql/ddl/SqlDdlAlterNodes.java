@@ -71,6 +71,11 @@ public class SqlDdlAlterNodes {
         }
 
 
+        public static SqlAlterTable dropColumn( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName ) {
+            return new SqlAlterTable.SqlAlterTableDropColumn( pos, tableName, columnName );
+        }
+
+
         public static SqlAlterTable dropConstraint( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName ) {
             return new SqlAlterTable.SqlAlterTableDropConstraint( pos, tableName, constraintName );
         }

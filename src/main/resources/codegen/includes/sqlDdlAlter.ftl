@@ -66,6 +66,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
     final SqlIdentifier constraintName;
     final SqlIdentifier newName;
     final SqlIdentifier refName;
+    final SqlIdentifier columnName;
     final SqlNode condition;
     final SqlNodeList columnList;
     final SqlNodeList refColumnList;
@@ -128,10 +129,22 @@ SqlDdlAlter SqlAlterTable(Span s) :
              }
         )
     |
-        <DROP> <CONSTRAINT> constraintName = SimpleIdentifier()
-        {
-            alterTable = SqlDdlAlterNodes.AlterTable.dropConstraint(s.end(this), id, constraintName);
-        }
+        <DROP>
+        (
+            (
+                <COLUMN> columnName = SimpleIdentifier()
+            |
+                columnName = SimpleIdentifier()
+            )
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.dropColumn(s.end(this), id, columnName);
+            }
+        |
+            <CONSTRAINT> constraintName = SimpleIdentifier()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.dropConstraint(s.end(this), id, constraintName);
+            }
+        )
     |
         <RENAME> <TO> newName = SimpleIdentifier()
         {

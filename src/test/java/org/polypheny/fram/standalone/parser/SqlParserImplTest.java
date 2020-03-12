@@ -66,6 +66,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testUnparseableIntervalQualifiers() {
         super.testUnparseableIntervalQualifiers();
     }
@@ -74,6 +77,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testUnparseableIntervalQualifiers2() {
         super.testUnparseableIntervalQualifiers2();
     }
@@ -82,6 +88,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testCaseExpression() {
         super.testCaseExpression();
     }
@@ -90,6 +99,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testSelectFromBareExplicitTableFails() {
         super.testSelectFromBareExplicitTableFails();
     }
@@ -98,6 +110,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testExplicitTable() {
         super.testExplicitTable();
     }
@@ -106,6 +121,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testExceptionCleanup() {
         super.testExceptionCleanup();
     }
@@ -114,6 +132,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testSelectList4() {
         super.testSelectList4();
     }
@@ -122,6 +143,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testLateral() {
         super.testLateral();
     }
@@ -130,6 +154,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testMinusIsReserved() {
         super.testMinusIsReserved();
     }
@@ -138,6 +165,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testLikeAndSimilar() {
         super.testLikeAndSimilar();
     }
@@ -146,6 +176,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testInvalidHintFormat() {
         super.testInvalidHintFormat();
     }
@@ -154,6 +187,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testEmptyValues() {
         super.testEmptyValues();
     }
@@ -162,6 +198,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testTemporalTable() {
         super.testTemporalTable();
     }
@@ -170,6 +209,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testAsAliases() {
         super.testAsAliases();
     }
@@ -178,6 +220,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testWindowSpec() {
         super.testWindowSpec();
     }
@@ -186,6 +231,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testDefault() {
         super.testDefault();
     }
@@ -194,6 +242,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testFromValuesWithoutParens() {
         super.testFromValuesWithoutParens();
     }
@@ -202,6 +253,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testInsertValuesRawDefault() {
         super.testInsertValuesRawDefault();
     }
@@ -210,6 +264,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testCastFails() {
         super.testCastFails();
     }
@@ -218,6 +275,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testDescribeStatement() {
         super.testDescribeStatement();
     }
@@ -226,6 +286,9 @@ public class SqlParserImplTest extends SqlParserTest {
     @Override
     @Test
     @Disabled
+    @SuppressWarnings({
+            "squid:S1607" // "Fix or remove this skipped unit test" - Justification: broken in base class
+    })
     public void testUnnest() {
         super.testUnnest();
     }
@@ -308,6 +371,20 @@ public class SqlParserImplTest extends SqlParserTest {
     public void testAlterTableAddUnique1() {
         sql( "alter table foo add constraint foobar unique (id1, id2)" )
                 .ok( "ALTER TABLE `FOO` ADD CONSTRAINT `FOOBAR` UNIQUE (`ID1`, `ID2`)" );
+    }
+
+
+    @Test
+    public void testAlterTableDropColumn1() {
+        sql( "alter table foo drop column bar" )
+                .ok( "ALTER TABLE `FOO` DROP COLUMN `BAR`" );
+    }
+
+
+    @Test
+    public void testAlterTableDropColumn2() {
+        sql( "alter table foo drop bar" )
+                .ok( "ALTER TABLE `FOO` DROP COLUMN `BAR`" );
     }
 
 
