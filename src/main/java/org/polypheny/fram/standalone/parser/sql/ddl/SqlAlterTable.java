@@ -320,6 +320,39 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> ALTER COLUMN <columnDefinition>;}
+     */
+    public static class SqlAlterTableAlterColumnDefinition extends SqlAlterTable {
+
+        private final SqlNode columnDefinition;
+
+
+        public SqlAlterTableAlterColumnDefinition( SqlParserPos pos, SqlIdentifier tableName, SqlNode columnDefinition ) {
+            super( pos, tableName );
+            this.columnDefinition = Objects.requireNonNull( columnDefinition );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnDefinition )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "ALTER" );
+            writer.keyword( "COLUMN" );
+            columnDefinition.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename> ALTER COLUMN <columnname> RENAME TO <newname>;}
      */
     public static class SqlAlterTableAlterColumnRename extends SqlAlterTableAlterColumn {
@@ -424,6 +457,8 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
                 case NULLABLE:
                     writer.keyword( "NULL" );
                     break;
+                default:
+                    throw new AssertionError( "unexpected: " + nullable );
             }
         }
     }

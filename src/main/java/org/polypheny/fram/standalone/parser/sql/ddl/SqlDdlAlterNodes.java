@@ -72,6 +72,11 @@ public class SqlDdlAlterNodes {
         }
 
 
+        public static SqlAlterTable alterColumnDefinition( SqlParserPos pos, SqlIdentifier tableName, SqlNode columnDefinition ) {
+            return new SqlAlterTable.SqlAlterTableAlterColumnDefinition( pos, tableName, columnDefinition );
+        }
+
+
         public static SqlAlterTable alterColumnRename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, SqlIdentifier newName ) {
             return new SqlAlterTable.SqlAlterTableAlterColumnRename( pos, tableName, columnName, newName );
         }

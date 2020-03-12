@@ -375,6 +375,20 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAlterColumnDefinition1() {
+        sql( "alter table foo alter column bar integer not null" )
+                .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` INTEGER NOT NULL" );
+    }
+
+
+    @Test
+    public void testAlterTableAlterColumnDefinition2() {
+        sql( "alter table foo alter column bar timestamp default current_timestamp" )
+                .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` TIMESTAMP DEFAULT CURRENT_TIMESTAMP" );
+    }
+
+
+    @Test
     public void testAlterTableAlterColumnRename() {
         sql( "alter table foo alter column bar rename to foobar" )
                 .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` RENAME TO `FOOBAR`" );

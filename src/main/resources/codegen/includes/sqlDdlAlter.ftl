@@ -67,6 +67,7 @@ SqlDdlAlter SqlAlterTable(Span s) :
     final SqlIdentifier newName;
     final SqlIdentifier refName;
     final SqlIdentifier columnName;
+    final SqlNode columnDefinition;
     final SqlNode condition;
     final SqlNode defaultValue;
     final SqlNodeList columnList;
@@ -130,30 +131,38 @@ SqlDdlAlter SqlAlterTable(Span s) :
              }
         )
     |
-        <ALTER> <COLUMN> columnName = SimpleIdentifier()
+        <ALTER> <COLUMN>
         (
-            <RENAME> <TO> newName = SimpleIdentifier()
-            {
-                alterTable = SqlDdlAlterNodes.AlterTable.alterColumnRename(s.end(this), id, columnName, newName);
-            }
-        |
-            <SET>
+            columnName = SimpleIdentifier()
             (
-                <DEFAULT_> defaultValue = Literal()
+                <RENAME> <TO> newName = SimpleIdentifier()
                 {
-                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetDefault(s.end(this), id, columnName, defaultValue);
+                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnRename(s.end(this), id, columnName, newName);
                 }
             |
-                <NOT> <NULL>
-                {
-                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NOT_NULLABLE);
-                }
-            |
-                <NULL>
-                {
-                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NULLABLE);
-                }
+                <SET>
+                (
+                    <DEFAULT_> defaultValue = Expression(ExprContext.ACCEPT_NON_QUERY)
+                    {
+                        alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetDefault(s.end(this), id, columnName, defaultValue);
+                    }
+                |
+                    <NOT> <NULL>
+                    {
+                        alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NOT_NULLABLE);
+                    }
+                |
+                    <NULL>
+                    {
+                        alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NULLABLE);
+                    }
+                )
             )
+        |
+            columnDefinition = ColumnDefinition()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.alterColumnDefinition(s.end(this), id, columnDefinition);
+            }
         )
     |
         <DROP>
@@ -180,5 +189,70 @@ SqlDdlAlter SqlAlterTable(Span s) :
     )
     {
         return alterTable;
+    }
+}
+
+SqlNode ColumnDefinition() :
+{
+    final SqlIdentifier id;
+    final SqlDataTypeSpec type;
+    final boolean identity;
+    final boolean primaryKey;
+    SqlNode defaultValue = null;
+    final SqlNode identityStart;
+    final SqlNode identityIncrement;
+    final SqlNode constraint;
+    final Span s = Span.of();
+    final ColumnStrategy strategy;
+}
+{
+    id = SimpleIdentifier() type = DataType()
+    (
+        <DEFAULT_> defaultValue = Expression(ExprContext.ACCEPT_NON_QUERY)
+        {
+            strategy = ColumnStrategy.DEFAULT;
+        }
+/*    | -- Currently not supported in Calcite's CREATE TABLE
+        <GENERATED> <BY> <DEFAULT_> <AS> <IDENTITY> <LPAREN> <START> <WITH> identityStart = Literal()
+        (
+            <COMMA> <INCREMENTED> <BY> identityIncrement = Literal()
+        |
+            { identityIncrement = null; }
+        )
+        <RPAREN>
+        {
+            strategy = ColumnStrategy.DEFAULT;
+        }*/
+    |
+        <NOT> <NULL>
+        {
+            defaultValue = null;
+            strategy = ColumnStrategy.NOT_NULLABLE;
+        }
+    |
+        <NULL>
+        {
+            defaultValue = null;
+            strategy = ColumnStrategy.NULLABLE;
+        }
+    )
+/*    ( -- Currently not supported in Calcite's CREATE TABLE
+        <IDENTITY>
+        {
+            identity = true;
+        }
+    |
+        { identity = false; }
+    )*/
+/*    ( -- Currently not supported in Calcite's CREATE TABLE
+        <PRIMARY> <KEY>
+        {
+            primaryKey = true;
+        }
+    |
+        { primaryKey = false; }
+    )*/
+    {
+        return SqlDdlNodes.column(s.add(id).end(this), id, type.withNullable(strategy == ColumnStrategy.DEFAULT ? null : strategy == ColumnStrategy.NULLABLE), defaultValue, strategy);
     }
 }
