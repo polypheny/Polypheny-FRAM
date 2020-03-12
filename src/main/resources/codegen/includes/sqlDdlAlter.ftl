@@ -137,10 +137,23 @@ SqlDdlAlter SqlAlterTable(Span s) :
                 alterTable = SqlDdlAlterNodes.AlterTable.alterColumnRename(s.end(this), id, columnName, newName);
             }
         |
-            <SET> <DEFAULT_> defaultValue = Literal()
-            {
-                alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetDefault(s.end(this), id, columnName, defaultValue);
-            }
+            <SET>
+            (
+                <DEFAULT_> defaultValue = Literal()
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetDefault(s.end(this), id, columnName, defaultValue);
+                }
+            |
+                <NOT> <NULL>
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NOT_NULLABLE);
+                }
+            |
+                <NULL>
+                {
+                    alterTable = SqlDdlAlterNodes.AlterTable.alterColumnSetNullable(s.end(this), id, columnName, ColumnStrategy.NULLABLE);
+                }
+            )
         )
     |
         <DROP>

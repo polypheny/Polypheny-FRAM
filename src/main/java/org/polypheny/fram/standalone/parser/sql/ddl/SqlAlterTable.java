@@ -20,6 +20,7 @@ package org.polypheny.fram.standalone.parser.sql.ddl;
 import java.util.List;
 import java.util.Objects;
 import javax.annotation.Nonnull;
+import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
@@ -380,6 +381,50 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
             writer.keyword( "SET" );
             writer.keyword( "DEFAULT" );
             defaultValue.unparse( writer, leftPrec, rightPrec );
+        }
+    }
+
+
+    /**
+     * {@code ALTER TABLE <tablename> ALTER COLUMN <columnname> SET [NOT] NULL;}
+     */
+    public static class SqlAlterTableAlterColumnSetNullable extends SqlAlterTableAlterColumn {
+
+        private final ColumnStrategy nullable;
+
+
+        public SqlAlterTableAlterColumnSetNullable( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, ColumnStrategy nullable ) {
+            super( pos, tableName, columnName );
+            switch ( nullable ) {
+                case NOT_NULLABLE:
+                case NULLABLE:
+                    this.nullable = nullable;
+                    break;
+                default:
+                    throw new IllegalArgumentException( "Only `[NOT] NULL` allowed here." );
+            }
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() ).build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "SET" );
+            switch ( nullable ) {
+                case NOT_NULLABLE:
+                    writer.keyword( "NOT" );
+                    // intentional fall through
+                case NULLABLE:
+                    writer.keyword( "NULL" );
+                    break;
+            }
         }
     }
 

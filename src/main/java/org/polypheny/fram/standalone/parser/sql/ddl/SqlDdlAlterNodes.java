@@ -17,6 +17,7 @@
 package org.polypheny.fram.standalone.parser.sql.ddl;
 
 
+import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -78,6 +79,11 @@ public class SqlDdlAlterNodes {
 
         public static SqlAlterTable alterColumnSetDefault( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, SqlNode defaultValue ) {
             return new SqlAlterTable.SqlAlterTableAlterColumnSetDefault( pos, tableName, columnName, defaultValue );
+        }
+
+
+        public static SqlAlterTable alterColumnSetNullable( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier columnName, ColumnStrategy nullable ) {
+            return new SqlAlterTable.SqlAlterTableAlterColumnSetNullable( pos, tableName, columnName, nullable );
         }
 
 

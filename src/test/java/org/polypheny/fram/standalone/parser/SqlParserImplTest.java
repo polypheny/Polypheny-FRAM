@@ -389,6 +389,20 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAlterColumnSetNullable1() {
+        sql( "alter table foo alter column bar set null" )
+                .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` SET NULL" );
+    }
+
+
+    @Test
+    public void testAlterTableAlterColumnSetNullable2() {
+        sql( "alter table foo alter column bar set not null" )
+                .ok( "ALTER TABLE `FOO` ALTER COLUMN `BAR` SET NOT NULL" );
+    }
+
+
+    @Test
     public void testAlterTableDropColumn1() {
         sql( "alter table foo drop column bar" )
                 .ok( "ALTER TABLE `FOO` DROP COLUMN `BAR`" );
