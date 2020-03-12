@@ -284,6 +284,13 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testAlterTableAddCheck1() {
+        sql( "alter table foo add constraint foobar check (id1 = id2)" )
+                .ok( "ALTER TABLE `FOO` ADD CONSTRAINT `FOOBAR` CHECK (`ID1` = `ID2`)" );
+    }
+
+
+    @Test
     public void testAlterTableAddForeignKey1() {
         sql( "alter table foo add constraint foobar foreign key (id1, id2) references bar (id1, id2) on delete set default on update set null" )
                 .ok( "ALTER TABLE `FOO` ADD CONSTRAINT `FOOBAR` FOREIGN KEY (`ID1`, `ID2`) REFERENCES `BAR` (`ID1`, `ID2`) ON DELETE SET DEFAULT ON UPDATE SET NULL" );

@@ -99,6 +99,41 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> ADD [CONSTRAINT <constraintname>]
+     * CHECK (<search condition>);}
+     */
+    public static class SqlAlterTableAddCheck extends SqlAlterTableAddConstraint {
+
+        private final SqlNode condition;
+
+
+        public SqlAlterTableAddCheck( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNode condition ) {
+            super( pos, tableName, constraintName );
+
+            this.condition = Objects.requireNonNull( condition );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( condition )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
+            writer.keyword( "CHECK" );
+            condition.unparse( writer, leftPrec, rightPrec ); // prints already parenthesis around the expression
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename>
      * ADD [CONSTRAINT <constraintname>] FOREIGN KEY (<column list>)
      * REFERENCES <exptablename> (<column list>)

@@ -63,14 +63,15 @@ SqlDdlAlter SqlAlterSchema(Span s) :
 SqlDdlAlter SqlAlterTable(Span s) :
 {
     final SqlIdentifier id;
-    final SqlDdlAlter alterTable;
-    final SqlIdentifier newName;
     final SqlIdentifier constraintName;
-    final SqlNodeList columnList;
+    final SqlIdentifier newName;
     final SqlIdentifier refName;
+    final SqlNode condition;
+    final SqlNodeList columnList;
     final SqlNodeList refColumnList;
     final String onDelete;
     final String onUpdate;
+    final SqlDdlAlter alterTable;
 }
 {
     <TABLE> id = CompoundIdentifier()
@@ -82,6 +83,11 @@ SqlDdlAlter SqlAlterTable(Span s) :
             { constraintName = null; }
         )
         (
+            <CHECK> condition = ParenthesizedExpression(ExprContext.ACCEPT_NON_QUERY)
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.addCheck(s.end(this), id, constraintName, condition);
+            }
+            |
             <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES> refName = CompoundIdentifier() refColumnList = ParenthesizedSimpleIdentifierList()
             (
                 <ON> <DELETE>
