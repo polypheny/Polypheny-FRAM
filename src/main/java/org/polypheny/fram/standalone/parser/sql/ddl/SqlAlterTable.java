@@ -64,31 +64,15 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
     }
 
 
-    /**
-     * {@code ALTER TABLE <tablename>
-     * ADD [CONSTRAINT <constraintname>] FOREIGN KEY (<column list>)
-     * REFERENCES <exptablename> (<column list>)
-     * [ON {DELETE | UPDATE} {CASCADE | SET DEFAULT | SET NULL}];}
-     */
-    public static class SqlAlterTableAddForeignKey extends SqlAlterTable {
+    protected static abstract class SqlAlterTableAddConstraint extends SqlAlterTable {
 
-        private final SqlIdentifier constraintName;
-        private final SqlNodeList columnList;
-        private final SqlIdentifier refName;
-        private final SqlNodeList refColumnList;
-        private final SqlAlterTableForeignKeyOption onDelete;
-        private final SqlAlterTableForeignKeyOption onUpdate;
+        protected final SqlIdentifier constraintName;
 
 
-        public SqlAlterTableAddForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+        protected SqlAlterTableAddConstraint( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName ) {
             super( pos, tableName );
 
             this.constraintName = constraintName; // nullable
-            this.columnList = Objects.requireNonNull( columnList );
-            this.refName = Objects.requireNonNull( refName );
-            this.refColumnList = Objects.requireNonNull( refColumnList );
-            this.onDelete = onDelete == null ? null : SqlAlterTableForeignKeyOption.valueOf( onDelete.toUpperCase().replace( ' ', '_' ) );
-            this.onUpdate = onUpdate == null ? null : SqlAlterTableForeignKeyOption.valueOf( onUpdate.toUpperCase().replace( ' ', '_' ) );
         }
 
 
@@ -96,7 +80,7 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
         @Override
         public List<SqlNode> getOperandList() {
             return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
-                    .add( constraintName, columnList, refName, refColumnList )
+                    .add( constraintName )
                     .build();
         }
 
@@ -110,6 +94,49 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
                 writer.keyword( "CONSTRAINT" );
                 constraintName.unparse( writer, leftPrec, rightPrec );
             }
+        }
+    }
+
+
+    /**
+     * {@code ALTER TABLE <tablename>
+     * ADD [CONSTRAINT <constraintname>] FOREIGN KEY (<column list>)
+     * REFERENCES <exptablename> (<column list>)
+     * [ON {DELETE | UPDATE} {CASCADE | SET DEFAULT | SET NULL}];}
+     */
+    public static class SqlAlterTableAddForeignKey extends SqlAlterTableAddConstraint {
+
+        private final SqlNodeList columnList;
+        private final SqlIdentifier refName;
+        private final SqlNodeList refColumnList;
+        private final SqlAlterTableForeignKeyOption onDelete;
+        private final SqlAlterTableForeignKeyOption onUpdate;
+
+
+        public SqlAlterTableAddForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+            super( pos, tableName, constraintName );
+
+            this.columnList = Objects.requireNonNull( columnList );
+            this.refName = Objects.requireNonNull( refName );
+            this.refColumnList = Objects.requireNonNull( refColumnList );
+            this.onDelete = onDelete == null ? null : SqlAlterTableForeignKeyOption.valueOf( onDelete.toUpperCase().replace( ' ', '_' ) );
+            this.onUpdate = onUpdate == null ? null : SqlAlterTableForeignKeyOption.valueOf( onUpdate.toUpperCase().replace( ' ', '_' ) );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnList, refName, refColumnList )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
             writer.keyword( "FOREIGN" );
             writer.keyword( "KEY" );
             {//NOSONAR "squid:S1199" - Justification: better readability
@@ -156,16 +183,14 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
      * {@code ALTER TABLE <tablename> ADD [CONSTRAINT <constraintname>]
      * PRIMARY KEY (<column list>);}
      */
-    public static class SqlAlterTableAddPrimaryKey extends SqlAlterTable {
+    public static class SqlAlterTableAddPrimaryKey extends SqlAlterTableAddConstraint {
 
-        private final SqlIdentifier constraintName;
         private final SqlNodeList columnList;
 
 
         public SqlAlterTableAddPrimaryKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
-            super( pos, tableName );
+            super( pos, tableName, constraintName );
 
-            this.constraintName = constraintName; // nullable
             this.columnList = Objects.requireNonNull( columnList );
         }
 
@@ -174,7 +199,7 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
         @Override
         public List<SqlNode> getOperandList() {
             return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
-                    .add( constraintName, columnList )
+                    .add( columnList )
                     .build();
         }
 
@@ -183,13 +208,46 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
         public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
             super.unparse( writer, leftPrec, rightPrec );
 
-            writer.keyword( "ADD" );
-            if ( constraintName != null ) {
-                writer.keyword( "CONSTRAINT" );
-                constraintName.unparse( writer, leftPrec, rightPrec );
-            }
             writer.keyword( "PRIMARY" );
             writer.keyword( "KEY" );
+            {//NOSONAR "squid:S1199" - Justification: better readability
+                final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
+                columnList.unparse( writer, leftPrec, rightPrec );
+                writer.endList( list );
+            }
+        }
+    }
+
+
+    /**
+     * {@code ALTER TABLE <tablename> ADD [CONSTRAINT <constraintname>] UNIQUE (<column list>);}
+     */
+    public static class SqlAlterTableAddUnique extends SqlAlterTableAddConstraint {
+
+        private final SqlNodeList columnList;
+
+
+        public SqlAlterTableAddUnique( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
+            super( pos, tableName, constraintName );
+
+            this.columnList = Objects.requireNonNull( columnList );
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( columnList )
+                    .build();
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
+            writer.keyword( "UNIQUE" );
             {//NOSONAR "squid:S1199" - Justification: better readability
                 final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
                 columnList.unparse( writer, leftPrec, rightPrec );

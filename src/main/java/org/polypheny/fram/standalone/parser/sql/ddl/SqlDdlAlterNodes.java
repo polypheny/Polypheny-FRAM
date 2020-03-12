@@ -60,6 +60,11 @@ public class SqlDdlAlterNodes {
         }
 
 
+        public static SqlAlterTable addUnique( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList ) {
+            return new SqlAlterTable.SqlAlterTableAddUnique( pos, tableName, constraintName, columnList );
+        }
+
+
         public static SqlAlterTable dropConstraint( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName ) {
             return new SqlAlterTable.SqlAlterTableDropConstraint( pos, tableName, constraintName );
         }

@@ -296,7 +296,7 @@ task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJ
 
 
 test {
-    exclude 'ch/unibas/dmi/dbis/polyphenydb/ddu/standalone/StandaloneTest.class'
+    exclude 'org/polypheny/fram/standalone/StandaloneTest.class'
 }
 
 

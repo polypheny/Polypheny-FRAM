@@ -115,6 +115,11 @@ SqlDdlAlter SqlAlterTable(Span s) :
             {
                 alterTable = SqlDdlAlterNodes.AlterTable.addPrimaryKey(s.end(this), id, constraintName, columnList);
             }
+        |
+            <UNIQUE> columnList = ParenthesizedSimpleIdentifierList()
+             {
+                 alterTable = SqlDdlAlterNodes.AlterTable.addUnique(s.end(this), id, constraintName, columnList);
+             }
         )
     |
         <DROP> <CONSTRAINT> constraintName = SimpleIdentifier()
