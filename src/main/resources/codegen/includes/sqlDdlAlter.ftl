@@ -75,11 +75,6 @@ SqlDdlAlter SqlAlterTable(Span s) :
 {
     <TABLE> id = CompoundIdentifier()
     (
-        <RENAME> <TO> newName = SimpleIdentifier()
-        {
-            alterTable = SqlDdlAlterNodes.AlterTable.rename(s.end(this), id, newName);
-        }
-    |
         <ADD>
         (
             <CONSTRAINT> constraintName = SimpleIdentifier()
@@ -113,6 +108,16 @@ SqlDdlAlter SqlAlterTable(Span s) :
         )
         {
             alterTable = SqlDdlAlterNodes.AlterTable.addForeignKey(s.end(this), id, constraintName, columnList, refName, refColumnList, onDelete, onUpdate);
+        }
+    |
+        <DROP> <CONSTRAINT> constraintName = SimpleIdentifier()
+        {
+            alterTable = SqlDdlAlterNodes.AlterTable.dropConstraint(s.end(this), id, constraintName);
+        }
+    |
+        <RENAME> <TO> newName = SimpleIdentifier()
+        {
+            alterTable = SqlDdlAlterNodes.AlterTable.rename(s.end(this), id, newName);
         }
     )
     {

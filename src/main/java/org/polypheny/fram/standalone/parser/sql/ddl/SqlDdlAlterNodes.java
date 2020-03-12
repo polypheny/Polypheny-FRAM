@@ -50,13 +50,18 @@ public class SqlDdlAlterNodes {
         }
 
 
-        public static SqlAlterTable rename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier newName ) {
-            return new SqlAlterTable( pos, tableName, newName );
+        public static SqlAlterTable addForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
+            return new SqlAlterTable.SqlAlterTableAddForeignKey( pos, tableName, constraintName, columnList, refName, refColumnList, onDelete, onUpdate );
         }
 
 
-        public static SqlAlterTable addForeignKey( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName, SqlNodeList columnList, SqlIdentifier refName, SqlNodeList refColumnList, String onDelete, String onUpdate ) {
-            return new SqlAlterTable( pos, tableName, constraintName, columnList, refName, refColumnList, onDelete, onUpdate );
+        public static SqlAlterTable dropConstraint( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier constraintName ) {
+            return new SqlAlterTable.SqlAlterTableDropConstraint( pos, tableName, constraintName );
+        }
+
+
+        public static SqlAlterTable rename( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier newName ) {
+            return new SqlAlterTable.SqlAlterTableRename( pos, tableName, newName );
         }
     }
 }
