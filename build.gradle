@@ -224,7 +224,12 @@ compileJavacc {
     dependsOn fmpp
     inputDirectory = file("${generatedDir}/main/fmpp/javacc")
     outputDirectory = file("${generatedDir}/main/javacc")
-    arguments = [lookahead: '2']
+    arguments = [
+            LOOKAHEAD: '2', // Default: '1'
+            FORCE_LA_CHECK: 'false', // Default: 'false'
+            CHOICE_AMBIGUITY_CHECK: '2', // Default: '2'
+            OTHER_AMBIGUITY_CHECK: '1', // Default: '1'
+    ]
 }
 
 
@@ -232,7 +237,7 @@ jjdoc {
     dependsOn fmpp
     inputDirectory = file("${generatedDir}/main/fmpp/javacc")
     outputDirectory = file("${docsDir}/jjdoc")
-    arguments = [text: 'false']
+    arguments = [TEXT: 'false']
 }
 
 
