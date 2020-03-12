@@ -34,4 +34,12 @@ public class SqlDdlIndexNodes {
     public static SqlCreateIndex createIndex( SqlParserPos pos, SqlIdentifier indexName, SqlIdentifier tableName, SqlNodeList columns ) {
         return new SqlCreateIndex( pos, indexName, tableName, columns );
     }
+
+
+    /**
+     * Creates a DROP INDEX.
+     */
+    public static SqlDropIndex dropIndex( SqlParserPos pos, SqlIdentifier indexName, boolean ifExists ) {
+        return new SqlDropIndex( pos, indexName, ifExists );
+    }
 }

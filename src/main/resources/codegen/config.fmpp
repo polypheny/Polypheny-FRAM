@@ -474,6 +474,9 @@ data: {
       "SqlDropType"
       "SqlDropView"
       "SqlDropFunction"
+# ### MODIFICATION START
+      "SqlDropIndex"
+# ### MODIFICATION END
     ]
 
     # Binary operators tokens

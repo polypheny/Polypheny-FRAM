@@ -455,3 +455,15 @@ SqlCreate SqlCreateIndex(Span s, boolean replace) :
         return SqlDdlIndexNodes.createIndex(s.end(this), id, table, columns);
     }
 }
+
+SqlDrop SqlDropIndex(Span s, boolean replace) :
+{
+    final boolean ifExists;
+    final SqlIdentifier id;
+}
+{
+    <INDEX> { if (replace) throw new ParseException("\"OR\" \"REPLACE\" cannot be combined with \"DROP\" \"INDEX\"."); }
+    id = CompoundIdentifier() ifExists = IfExistsOpt() {
+        return SqlDdlIndexNodes.dropIndex(s.end(this), id, ifExists);
+    }
+}

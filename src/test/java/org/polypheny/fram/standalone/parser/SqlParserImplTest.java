@@ -471,6 +471,20 @@ public class SqlParserImplTest extends SqlParserTest {
                 .fails( "\"OR\" \"REPLACE\" cannot be combined with \"CREATE\" \"INDEX\"." );
     }
 
+
+    @Test
+    public void testDropIndex() {
+        sql( "drop index foo" )
+                .ok( "DROP INDEX `FOO`" );
+    }
+
+
+    @Test
+    public void testDropIndexIfExists() {
+        sql( "drop index foo if exists" )
+                .ok( "DROP INDEX `FOO` IF EXISTS" );
+    }
+
 // /// MODIFICATION END
 
 
