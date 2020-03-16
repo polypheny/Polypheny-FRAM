@@ -604,8 +604,8 @@ runtime {
             'jdk.unsupported',
     ]
 
-    targetPlatform("${rootProject.version}-standalone-jdk11-linux64", "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
-    targetPlatform("${rootProject.version}-standalone-jdk11-windows64", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+    targetPlatform("${standaloneJdk11Linux64.replaceFirst("${rootProject.name}-", '')}", "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+    targetPlatform("${standaloneJdk11Windows64.replaceFirst("${rootProject.name}-", '')}", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
 }
 tasks.runtime.dependsOn jdk11_unzipJdkWindows64, jdk11_unzipJdkLinux64
 
