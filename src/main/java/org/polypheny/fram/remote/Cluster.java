@@ -602,7 +602,9 @@ public class Cluster implements MembershipListener {
             LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
         }
 
-        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql()
+                // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+                .replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" ); // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
         final RspList<RemoteExecuteResult> result;
 
         if ( remoteNodes != null && remoteNodes.size() == 1 && remoteNodes.contains( thisRemoteNode ) ) {

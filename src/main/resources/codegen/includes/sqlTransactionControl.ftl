@@ -14,24 +14,38 @@
 // limitations under the License.
 -->
 
-SqlCtrl SqlCommit() :
+/**
+ * Parses a Control statement ({@code COMMIT} or {@code ROLLBACK}).
+ */
+SqlCtrl SqlCtrl() :
 {
-    final Span s;
+    final SqlCtrl ctrl;
 }
 {
-    <COMMIT> { s = span(); }
+    (
+        ctrl = SqlCommit()
+    |
+        ctrl = SqlRollback()
+    )
+    { return ctrl; }
+}
+
+SqlCtrl SqlCommit() :
+{
+}
+{
+    <COMMIT>
     {
-        return SqlCtrlNodes.commit(s.end(this));
+        return SqlCtrlNodes.commit(span().end(this));
     }
 }
 
 SqlCtrl SqlRollback() :
 {
-    final Span s;
 }
 {
-    <ROLLBACK> { s = span(); }
+    <ROLLBACK>
     {
-        return SqlCtrlNodes.rollback(s.end(this));
+        return SqlCtrlNodes.rollback(span().end(this));
     }
 }

@@ -51,7 +51,10 @@ data: {
     imports: [
 # ### MODIFICATION START
         "org.polypheny.fram.standalone.parser.sql.SqlCtrl"
+        "org.polypheny.fram.standalone.parser.sql.SqlDdlAlter"
         "org.polypheny.fram.standalone.parser.sql.ctrl.SqlCtrlNodes"
+        "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlAlterNodes"
+        "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlIndexNodes"
 # ### MODIFICATION END
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
@@ -70,6 +73,10 @@ data: {
       "JAR"
       "FILE"
       "ARCHIVE"
+# ### MODIFICATION START
+      "INDEX"
+      "RENAME"
+# ### MODIFICATION END
     ]
 
     # List of keywords from "keywords" section that are not reserved.
@@ -396,6 +403,10 @@ data: {
       "JAR"
       "FILE"
       "ARCHIVE"
+# ### MODIFICATION START
+      "INDEX"
+      "RENAME"
+# ### MODIFICATION END
     ]
 
     # List of non-reserved keywords to remove;
@@ -411,8 +422,8 @@ data: {
     # List of methods for parsing custom SQL statements.
     statementParserMethods: [
 # ### MODIFICATION START
-        "SqlCommit()"
-        "SqlRollback()"
+        "SqlCtrl()"
+        "SqlDdlAlter()"
 # ### MODIFICATION END
     ]
 
@@ -449,6 +460,9 @@ data: {
       "SqlCreateType"
       "SqlCreateView"
       "SqlCreateFunction"
+# ### MODIFICATION START
+      "SqlCreateIndex"
+# ### MODIFICATION END
     ]
 
     # List of methods for parsing extensions to "DROP" calls.
@@ -460,6 +474,9 @@ data: {
       "SqlDropType"
       "SqlDropView"
       "SqlDropFunction"
+# ### MODIFICATION START
+      "SqlDropIndex"
+# ### MODIFICATION END
     ]
 
     # Binary operators tokens
@@ -478,6 +495,7 @@ data: {
 # ### MODIFICATION START
         # The "sqlDataDefinition.ftl" file was originally named "parserImpls.ftl"
         "sqlDataDefinition.ftl"
+        "sqlDdlAlter.ftl"
         "sqlTransactionControl.ftl"
 # ### MODIFICATION END
     ]

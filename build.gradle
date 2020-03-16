@@ -180,6 +180,7 @@ dependencies {
     // ///// //// /// // /
     // TESTING (Eclipse Public License 2.0)
     testCompile group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.0'
+    testCompile group: 'org.hamcrest', name: 'hamcrest-library', version: '2.1'
     // Apache Calcite Avatica (Apache 2.0)
     testCompile group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
@@ -199,7 +200,11 @@ dependencies {
 
 
 task fmpp(group: 'javacc') {
-    inputs.files(fileTree("${extractedDir}/main/resources/codegen/templates"), file("${resourcesSrcDir}/codegen/config.fmpp"))
+    inputs.files(
+            file("${extractedDir}/main/resources/codegen/templates/Parser.jj"), // The parser template
+            fileTree("${resourcesSrcDir}/codegen/includes/"), // The extensions
+            file("${resourcesSrcDir}/codegen/config.fmpp") // Our configuration
+    )
     outputs.dir(file("${generatedDir}/main/fmpp"))
 
     doLast {
@@ -219,7 +224,12 @@ compileJavacc {
     dependsOn fmpp
     inputDirectory = file("${generatedDir}/main/fmpp/javacc")
     outputDirectory = file("${generatedDir}/main/javacc")
-    arguments = [lookahead: '2']
+    arguments = [
+            LOOKAHEAD: '2', // Default: '1'
+            FORCE_LA_CHECK: 'false', // Default: 'false'
+            CHOICE_AMBIGUITY_CHECK: '2', // Default: '2'
+            OTHER_AMBIGUITY_CHECK: '1', // Default: '1'
+    ]
 }
 
 
@@ -227,7 +237,7 @@ jjdoc {
     dependsOn fmpp
     inputDirectory = file("${generatedDir}/main/fmpp/javacc")
     outputDirectory = file("${docsDir}/jjdoc")
-    arguments = [text: 'false']
+    arguments = [TEXT: 'false']
 }
 
 
@@ -295,7 +305,7 @@ task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJ
 
 
 test {
-    exclude 'ch/unibas/dmi/dbis/polyphenydb/ddu/standalone/StandaloneTest.class'
+    exclude 'org/polypheny/fram/standalone/StandaloneTest.class'
 }
 
 
@@ -594,8 +604,8 @@ runtime {
             'jdk.unsupported',
     ]
 
-    targetPlatform("${rootProject.version}-standalone-jdk11-linux64", "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
-    targetPlatform("${rootProject.version}-standalone-jdk11-windows64", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+    targetPlatform("${standaloneJdk11Linux64.replaceFirst("${rootProject.name}-", '')}", "${buildDir}/jdks/jdk-11-linux64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
+    targetPlatform("${standaloneJdk11Windows64.replaceFirst("${rootProject.name}-", '')}", "${buildDir}/jdks/jdk-11-windows64/jdk-11.${jdk11Minor}.${jdk11Update}+${jdk11Build}")
 }
 tasks.runtime.dependsOn jdk11_unzipJdkWindows64, jdk11_unzipJdkLinux64
 
