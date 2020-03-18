@@ -193,7 +193,7 @@ dependencies {
     //
     // ///// //// /// // /
     // JAVACC (BSD 2-clause)
-    javacc group: 'net.java.dev.javacc', name: 'javacc', version: '4.0' /* KEEP THIS VERSION */
+    javacc group: 'net.java.dev.javacc', name: 'javacc', version: '7.0.5' /* KEEP THIS VERSION */
 }
 
 
