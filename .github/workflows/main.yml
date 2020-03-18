@@ -22,10 +22,18 @@ jobs:
         java-version: ${{ matrix.java }}
     - name: Checkout
       uses: actions/checkout@v2
-    - name: Build
+    - name: Assemble
       run: |
         chmod +x ./gradlew
-        ./gradlew --no-daemon build
+        ./gradlew --no-daemon assemble
+    - name: Test
+      run: |
+        chmod +x ./gradlew
+        ./gradlew --no-daemon check
+    - name: Zip
+      run: |
+        chmod +x ./gradlew
+        ./gradlew --no-daemon zipAll
 
   windows:
     name: Windows (JDK ${{ matrix.java }})
@@ -37,10 +45,18 @@ jobs:
     - name: Set up JDK ${{ matrix.java }}
       uses: actions/setup-java@v1
       with:
-        java-version: 11
+        java-version: ${{ matrix.java }}
     - name: Checkout
       uses: actions/checkout@v2
-    - name: Build
+    - name: Assemble
       shell: cmd
       run: |
-        ./gradlew --no-daemon build
+        ./gradlew --no-daemon assemble
+    - name: Test
+      shell: cmd
+      run: |
+        ./gradlew --no-daemon check
+    - name: Zip
+      shell: cmd
+      run: |
+        ./gradlew --no-daemon zipAll
