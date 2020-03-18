@@ -52,13 +52,6 @@ buildscript {
 }
 
 
-repositories {
-    mavenCentral()
-    jcenter()
-    maven { url 'https://nexus.dmi.unibas.ch/repository/maven2/' }
-}
-
-
 apply plugin: 'idea'
 apply plugin: 'java'
 apply plugin: 'maven-publish'
@@ -77,6 +70,8 @@ version = "${rootProject.version_major}.${rootProject.version_minor}.${rootProje
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
+    withJavadocJar()
+    withSourcesJar()
 }
 
 
@@ -92,7 +87,6 @@ def resourcesBuildDir = "${project.buildDir}/resources"
 sourceSets {
     main {
         java {
-            srcDir "${generatedDir}/main/fmpp"
             srcDir "${generatedDir}/main/javacc"
         }
         resources {
@@ -105,22 +99,22 @@ sourceSets {
 configurations {
     fmppTemplates { transitive = false }
 
-    pdbModuleCompile.extendsFrom compile
-    pdbModuleCompileOnly.extendsFrom pdbModuleCompile
+    standaloneImplementation.extendsFrom implementation
 
-    standaloneCompile.extendsFrom compile
-    standaloneCompileOnly.extendsFrom standaloneCompile
+    pdbModuleImplementation.extendsFrom implementation
 
-    compileClasspath.extendsFrom compileOnly, pdbModuleCompileOnly, standaloneCompileOnly
-    runtimeClasspath.extendsFrom implementation, runtimeOnly, standaloneCompile
-    testCompileClasspath.extendsFrom testCompileOnly, pdbModuleCompileOnly, standaloneCompileOnly
+    compileClasspath.extendsFrom compileOnly, implementation, standaloneImplementation, pdbModuleImplementation
+    runtimeClasspath.extendsFrom implementation, runtimeOnly, runtime, standaloneImplementation
+
+    testCompileClasspath.extendsFrom testCompileOnly, testImplementation, standaloneImplementation, pdbModuleImplementation
+    testRuntimeClasspath.extendsFrom testRuntimeOnly, testRuntime, testImplementation, standaloneImplementation
 }
 
 
-lombok {
-    // https://projectlombok.org/
-    version = '1.18.12'
-    sha256 = '49381508ecb02b3c173368436ef71b24c0d4418ad260e6cc98becbcf4b345406'
+repositories {
+    mavenCentral()
+    jcenter()
+    maven { url 'https://nexus.dmi.unibas.ch/repository/maven2/' }
 }
 
 
@@ -138,54 +132,54 @@ dependencies {
     // ///// //// /// // /
     // STANDALONE DDBMS
     // Apache Calcite Avatica (Apache 2.0)
-    standaloneCompile group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion
+    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
-    standaloneCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
-    standaloneCompile group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
+    standaloneImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
+    standaloneImplementation group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
     // HSQLDB (BSD)
-    standaloneCompile group: 'org.hsqldb', name: 'hsqldb', version: '2.5.0'
+    standaloneImplementation group: 'org.hsqldb', name: 'hsqldb', version: '2.5.0'
     // Log4j (Apache 2.0)
-    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4jVersion
-    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4jVersion
-    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-1.2-api', version: log4jVersion
-    standaloneCompile group: 'org.apache.logging.log4j', name: 'log4j-api', version: log4jVersion
+    standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4jVersion
+    standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4jVersion
+    standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-1.2-api', version: log4jVersion
+    standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-api', version: log4jVersion
     // CLI parsing (Apache 2.0)
-    standaloneCompile group: 'com.github.rvesse', name: 'airline', version: '2.7.2'
+    standaloneImplementation group: 'com.github.rvesse', name: 'airline', version: '2.7.2'
 
     //
     // ///// //// /// // /
     // COMPILE (Required for both runtime environments)
     //
     // Apache Commons (Apache 2.0)
-    compile group: 'commons-transaction', name: 'commons-transaction', version: '1.2'
-    compile group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
-    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
-    compile group: 'commons-codec', name: 'commons-codec', version: '1.14'
+    implementation group: 'commons-transaction', name: 'commons-transaction', version: '1.2'
+    implementation group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
+    implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
+    implementation group: 'commons-codec', name: 'commons-codec', version: '1.14'
     // Google GUAVA (Apache 2.0)
-    compile group: 'com.google.guava', name: 'guava', version: '28.2-jre'
+    implementation group: 'com.google.guava', name: 'guava', version: '28.2-jre'
     // Byte Units (Apache 2.0)
-    compile group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
+    implementation group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
     // Cluster Management, JGroups (Apache 2.0)
-    compile group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
+    implementation group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
     // Metrics, Micrometer Application Metrics (Apache 2.0)
-    compile group: 'io.micrometer', name: 'micrometer-core', version: '1.3.6'
-    compile group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.3.6'
-    compile group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.3.6'
-    compile group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.3.6'
+    implementation group: 'io.micrometer', name: 'micrometer-core', version: '1.3.6'
+    implementation group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.3.6'
+    implementation group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.3.6'
+    implementation group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.3.6'
     // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
-    compile group: 'com.typesafe', name: 'config', version: '1.4.0'
+    implementation group: 'com.typesafe', name: 'config', version: '1.4.0'
 
 
     //
     // ///// //// /// // /
     // TESTING (Eclipse Public License 2.0)
-    testCompile group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.0'
-    testCompile group: 'org.hamcrest', name: 'hamcrest-library', version: '2.2'
+    testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.0'
+    testImplementation group: 'org.hamcrest', name: 'hamcrest-library', version: '2.2'
     // Apache Calcite Avatica (Apache 2.0)
-    testCompile group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
+    testImplementation group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
-    testCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
-    testCompile group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
+    testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
+    testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
 
     //
     // ///// //// /// // /
@@ -196,6 +190,13 @@ dependencies {
     // ///// //// /// // /
     // JAVACC (BSD 2-clause)
     javacc group: 'net.java.dev.javacc', name: 'javacc', version: '4.0' /* KEEP THIS VERSION */
+}
+
+
+lombok {
+    // https://projectlombok.org/
+    version = '1.18.12'
+    sha256 = '49381508ecb02b3c173368436ef71b24c0d4418ad260e6cc98becbcf4b345406'
 }
 
 
@@ -276,7 +277,7 @@ task standaloneJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.Shadow
     from(project.convention.getPlugin(JavaPluginConvention).sourceSets.main.output)
 
     configurations = [project.configurations.runtime]
-    configurations.addAll([project.configurations.standaloneCompile])
+    configurations.addAll([project.configurations.standaloneImplementation])
 
     exclude 'META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'application.conf'
 }
@@ -298,13 +299,15 @@ task pdbModuleJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJ
     from(project.convention.getPlugin(JavaPluginConvention).sourceSets.main.output)
 
     configurations = [project.configurations.runtime]
-    configurations.addAll([project.configurations.pdbModuleCompile])
+    configurations.addAll([project.configurations.pdbModuleImplementation])
 
     exclude 'META-INF/INDEX.LIST', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'application.conf'
 }
 
 
 test {
+    useJUnitPlatform()
+    include 'org/polypheny/fram/**'
     exclude 'org/polypheny/fram/standalone/StandaloneTest.class'
 }
 
@@ -325,26 +328,6 @@ javadoc {
     failOnError = false
     exclude '**/Parser.jj'  // Exclude the generated parser
     exclude '**/ParseException.java', '**/SimpleCharStream.java', '**/SqlParserImpl.java', '**/SqlParserImplConstants.java', '**/SqlParserImplTokenManager.java', '**/Token.java', '**/TokenMgrError.java'  // Exclude the generated parser
-}
-
-
-task javadocJar(type: Jar, dependsOn: javadoc) {
-    archiveClassifier = 'javadoc'
-    from javadoc.destinationDir
-}
-
-
-task sourcesJar(type: Jar, dependsOn: classes) {
-    archiveClassifier = 'sources'
-    from sourceSets.main.allSource
-}
-
-
-artifacts {
-    archives jar // regular jar containing only the source from this source set
-
-    archives sourcesJar // jar file containing the source files
-    archives javadocJar // jar file containing the java doc files
 }
 
 
@@ -413,7 +396,7 @@ packLinux64.dependsOn jar, jdk8_downloadJdkLinux64
 packLinux64.doFirst {
     // Add all required dependencies to the classpath of this pack task
     Set dependencies = []
-    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneCompile]
+    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneImplementation]
     standaloneConfigurations.stream().each { it.each { dependencies.add(it) } }
     dependencies.each { classpath += file(it) }
 }
@@ -442,7 +425,7 @@ packWindows64.dependsOn jar, jdk8_downloadJdkWindows64
 packWindows64.doFirst {
     // Add all required dependencies to the classpath of this pack task
     Set dependencies = []
-    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneCompile]
+    Set standaloneConfigurations = [project.configurations.runtime, project.configurations.standaloneImplementation]
     standaloneConfigurations.stream().each { it.each { dependencies.add(it) } }
     dependencies.each { classpath += file(it) }
 }
@@ -660,7 +643,6 @@ task generatePom(group: 'publishing', dependsOn: 'generatePomFileForMavenPublica
 sonarqube {
     properties {
         // Exclude the generead classes (see "sourceSets.main.java")
-        properties['sonar.sources'] -= [file("${generatedDir}/main/fmpp")]
         properties['sonar.sources'] -= [file("${generatedDir}/main/javacc")]
     }
 }
@@ -674,9 +656,10 @@ idea {
         inheritOutputDirs = false
         outputDir = file("${classesDir}/main")
         testOutputDir = file("${classesDir}/test")
+        generatedSourceDirs += file("${generatedDir}/main/javacc")
 
-        // Add the compileOnly dependencies. This allows the usage of the "Run"-Button and having the two different fat jars. Basically, we somehow undo the "compileOnly" effect which we exploit for the two fat jars...
-        scopes.RUNTIME.plus += [configurations.pdbModuleCompileOnly]
-        scopes.RUNTIME.plus += [configurations.standaloneCompileOnly]
+        // Add the custom implementation dependencies. This allows the usage of the "Run"-Button and having the two different fat jars. Basically, we somehow undo the "compileOnly" effect which we exploit for the two fat jars...
+        scopes.RUNTIME.plus += [configurations.pdbModuleImplementation]
+        scopes.RUNTIME.plus += [configurations.standaloneImplementation]
     }
 }
