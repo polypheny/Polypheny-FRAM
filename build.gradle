@@ -109,7 +109,7 @@ configurations {
 
     compileClasspath.extendsFrom compileOnly, implementation, standaloneImplementation, pdbModuleImplementation
     runtimeClasspath.extendsFrom implementation, runtimeOnly, runtime, standaloneImplementation
-
+    
     testCompileClasspath.extendsFrom testCompileOnly, testImplementation, standaloneImplementation, pdbModuleImplementation
     testRuntimeClasspath.extendsFrom testRuntimeOnly, testRuntime, testImplementation, standaloneImplementation
 }
