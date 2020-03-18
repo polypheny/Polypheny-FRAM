@@ -46,6 +46,9 @@ buildscript {
 
         // Gradle Download Task (https://github.com/michel-kraemer/gradle-download-task, Apache 2.0)
         classpath group: 'de.undercouch', name: 'gradle-download-task', version: '4.0.4'
+
+        // Gradle Test Logger Plugin (https://github.com/radarsh/gradle-test-logger-plugin, Apache 2.0)
+        classpath group: 'com.adarshr', name: 'gradle-test-logger-plugin', version: '2.0.0'
     }
 
     ant.taskdef(name: 'fmpp', classname: 'fmpp.tools.AntTask', classpath: buildscript.configurations.classpath.asPath)
@@ -56,6 +59,7 @@ apply plugin: 'idea'
 apply plugin: 'java'
 apply plugin: 'maven-publish'
 apply plugin: 'ca.coglinc.javacc'
+apply plugin: 'com.adarshr.test-logger'
 apply plugin: 'com.hendraanggrian.packr'
 apply plugin: 'de.undercouch.download'
 apply plugin: 'io.franzbecker.gradle-lombok'
@@ -105,7 +109,7 @@ configurations {
 
     compileClasspath.extendsFrom compileOnly, implementation, standaloneImplementation, pdbModuleImplementation
     runtimeClasspath.extendsFrom implementation, runtimeOnly, runtime, standaloneImplementation
-
+    
     testCompileClasspath.extendsFrom testCompileOnly, testImplementation, standaloneImplementation, pdbModuleImplementation
     testRuntimeClasspath.extendsFrom testRuntimeOnly, testRuntime, testImplementation, standaloneImplementation
 }
