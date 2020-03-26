@@ -17,8 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.AbstractCatalog;
-import org.polypheny.fram.standalone.SimpleNode.DatabaseHolder;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -27,6 +25,8 @@ import java.sql.Statement;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
+import org.polypheny.fram.AbstractCatalog;
+import org.polypheny.fram.standalone.LocalNode.DatabaseHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

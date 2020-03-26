@@ -17,8 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import java.sql.Connection;
 import java.util.Collection;
 import java.util.Collections;
@@ -28,7 +26,6 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.sql.DataSource;
 import lombok.EqualsAndHashCode;
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
@@ -41,10 +38,12 @@ import org.apache.calcite.plan.ConventionTraitDef;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.RuleSets;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,8 +65,6 @@ public class ConnectionInfos {
     final UUID nodeId;
     final UUID userId;
     private final ConnectionHandle connectionHandle;
-    private final SqlParser.Config parserConfig;
-    private final DataSource schemaDataSource;
 
     private final ConnectionPropertiesImpl connectionProperties;
     private volatile boolean isDirty = false;
@@ -77,23 +74,22 @@ public class ConnectionInfos {
     @EqualsAndHashCode.Include
     final UUID connectionId;
 
-    private final Set<RemoteNode> accessedNodes = new HashSet<>();
+    private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
 
+    private Cluster cluster;
     private TransactionInfos currentTransaction;
     private Planner planner;
 
 
-    public ConnectionInfos( final ConnectionHandle ch, final SqlParser.Config sqlParserConfig, final DataSource dataSource ) {
-        this( null, null, ch, sqlParserConfig, dataSource );
+    public ConnectionInfos( final ConnectionHandle ch ) {
+        this( null, null, ch );
     }
 
 
-    public ConnectionInfos( final UUID nodeId, final UUID userId, final ConnectionHandle ch, final SqlParser.Config parserConfig, final DataSource schemaDataSource ) {
+    public ConnectionInfos( final UUID nodeId, final UUID userId, final ConnectionHandle ch ) {
         this.nodeId = nodeId;
         this.userId = userId;
         this.connectionHandle = ch;
-        this.parserConfig = parserConfig;
-        this.schemaDataSource = schemaDataSource;
 
         this.connectionProperties = new ConnectionPropertiesImpl();
         this.statementIdGenerator.set( 0 );
@@ -106,6 +102,8 @@ public class ConnectionInfos {
         } finally {
             this.connectionId = connectionId;
         }
+
+        this.cluster = Cluster.getDefaultCluster();
     }
 
 
@@ -151,7 +149,12 @@ public class ConnectionInfos {
     }
 
 
-    public StatementInfos createPreparedStatement( StatementInfos statement, List<Entry<RemoteNode, RemoteStatementHandle>> remoteStatements, Collection<RemoteNode> quorum ) {
+    public StatementInfos createPreparedStatement( StatementInfos statement, StatementHandle remoteStatementHandle ) {
+        return statement.toPreparedStatement( remoteStatementHandle );
+    }
+
+
+    public StatementInfos createPreparedStatement( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements, Collection<AbstractRemoteNode> quorum ) {
         return statement.toPreparedStatement( remoteStatements, quorum );
     }
 
@@ -159,6 +162,11 @@ public class ConnectionInfos {
     /*
      *
      */
+
+
+    public Cluster getCluster() {
+        return this.cluster;
+    }
 
 
     public synchronized TransactionInfos getOrStartTransaction() {
@@ -197,12 +205,12 @@ public class ConnectionInfos {
     }
 
 
-    public void addAccessedNodes( final Collection<RemoteNode> nodes ) {
+    public void addAccessedNodes( final Collection<AbstractRemoteNode> nodes ) {
         this.accessedNodes.addAll( nodes );
     }
 
 
-    public Collection<RemoteNode> getAccessedNodes() {
+    public Collection<AbstractRemoteNode> getAccessedNodes() {
         return Collections.unmodifiableCollection( accessedNodes );
     }
 
@@ -224,9 +232,9 @@ public class ConnectionInfos {
 
         final SchemaPlus rootSchema = Frameworks.createRootSchema( true );
         return this.planner = Frameworks.getPlanner( Frameworks.newConfigBuilder()
-                .parserConfig( this.parserConfig )
+                .parserConfig( this.getCluster().getLocalNode().getSqlParserConfig() )
                 // CAUTION! Hard coded HSQLDB information
-                .defaultSchema( rootSchema.add( "PUBLIC", JdbcSchema.create( rootSchema, "HSQLDB", this.schemaDataSource, null, "PUBLIC" ) ) )
+                .defaultSchema( rootSchema.add( "PUBLIC", JdbcSchema.create( rootSchema, "HSQLDB", this.getCluster().getLocalNode().getDataSource(), null, "PUBLIC" ) ) )
                 .traitDefs( ConventionTraitDef.INSTANCE, RelCollationTraitDef.INSTANCE )
                 .context( Contexts.EMPTY_CONTEXT )
                 .ruleSets( RuleSets.ofList() )

@@ -17,11 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.remote.RemoteMeta;
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import java.rmi.RemoteException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -32,6 +27,11 @@ import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.RemoteMeta;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 
 
 public abstract class ResultSetInfos {
@@ -57,13 +57,13 @@ public abstract class ResultSetInfos {
 
     public static class SingleResult extends ResultSetInfos {
 
-        private final Map<RemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+        private final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
         private final ExecuteResult executeResult;
 
-        private final RemoteNode THIS_IS_A_HACK__PLEASE_REPLACE_ME;
+        private final AbstractRemoteNode THIS_IS_A_HACK__PLEASE_REPLACE_ME;
 
 
-        public SingleResult( StatementInfos statement, List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults ) {
+        public SingleResult( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults ) {
             super( statement );
             if ( remoteResults == null || remoteResults.size() < 1 ) {
                 throw new IllegalArgumentException( "The size of remoteResults must be at least 1" );
@@ -98,11 +98,11 @@ public abstract class ResultSetInfos {
 
     public static class BatchResult extends ResultSetInfos {
 
-        private final Map<RemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+        private final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
         private final ExecuteBatchResult executeBatchResult;
 
 
-        public BatchResult( StatementInfos statement, List<Entry<RemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
+        public BatchResult( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
             super( statement );
 
             if ( remoteBatchResults == null || remoteBatchResults.size() < 1 ) {

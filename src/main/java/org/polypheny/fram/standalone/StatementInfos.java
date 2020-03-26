@@ -17,10 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -32,6 +28,10 @@ import java.util.Map.Entry;
 import java.util.Set;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.StatementHandle;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 
 
 /**
@@ -41,10 +41,10 @@ public class StatementInfos {
 
     private final ConnectionInfos connection;
     private final StatementHandle statementHandle;
-    private final Map<RemoteNode, RemoteStatementHandle> origins = new LinkedHashMap<>();
+    private final Map<AbstractRemoteNode, RemoteStatementHandle> origins = new LinkedHashMap<>();
     private ResultSetInfos resultSetInfos;
-    private List<RemoteNode> executionTargets;
-    private final Set<RemoteNode> accessedNodes = new HashSet<>();
+    private List<AbstractRemoteNode> executionTargets;
+    private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
 
 
     StatementInfos( final ConnectionInfos connection, final StatementHandle statementHandle ) {
@@ -63,7 +63,7 @@ public class StatementInfos {
     }
 
 
-    public RemoteStatementHandle getRemoteStatementHandle( final RemoteNode node ) {
+    public RemoteStatementHandle getRemoteStatementHandle( final AbstractRemoteNode node ) {
         return this.origins.get( node );
     }
 
@@ -73,7 +73,7 @@ public class StatementInfos {
     }
 
 
-    public ResultSetInfos createResultSet( List<Entry<RemoteNode, RemoteExecuteResult>> remoteResults ) {
+    public ResultSetInfos createResultSet( List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults ) {
         synchronized ( this ) {
             this.resultSetInfos = new ResultSetInfos.SingleResult( this, remoteResults );
             return this.resultSetInfos;
@@ -81,7 +81,7 @@ public class StatementInfos {
     }
 
 
-    public ResultSetInfos createBatchResultSet( List<Entry<RemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
+    public ResultSetInfos createBatchResultSet( List<Entry<AbstractRemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
         synchronized ( this ) {
             this.resultSetInfos = new ResultSetInfos.BatchResult( this, remoteBatchResults );
             return this.resultSetInfos;
@@ -89,34 +89,40 @@ public class StatementInfos {
     }
 
 
-    public StatementInfos withExecutionTargets( Collection<RemoteNode> remoteNodes ) {
+    public StatementInfos withExecutionTargets( Collection<AbstractRemoteNode> remoteNodes ) {
         this.executionTargets = new LinkedList<>( remoteNodes );
         this.addAccessedNodes( remoteNodes );
         return this;
     }
 
 
-    public Collection<RemoteNode> getExecutionTargets() {
+    public Collection<AbstractRemoteNode> getExecutionTargets() {
         return new LinkedList<>( this.executionTargets );
     }
 
 
-    public void addAccessedNodes( Collection<RemoteNode> nodes ) {
+    public void addAccessedNodes( Collection<AbstractRemoteNode> nodes ) {
         this.accessedNodes.addAll( nodes );
         connection.addAccessedNodes( nodes );
     }
 
 
-    public Collection<RemoteNode> getAccessedNodes() {
+    public Collection<AbstractRemoteNode> getAccessedNodes() {
         return Collections.unmodifiableCollection( accessedNodes );
     }
 
 
-    public StatementInfos toPreparedStatement( final List<Entry<RemoteNode, RemoteStatementHandle>> remoteStatements, final Collection<RemoteNode> quorum ) {
+    public StatementInfos toPreparedStatement( final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements, final Collection<AbstractRemoteNode> quorum ) {
         remoteStatements.forEach( entry -> StatementInfos.this.origins.put( entry.getKey(), entry.getValue() ) );
         // BEGIN HACK
         this.statementHandle.signature = remoteStatements.size() == 0 ? null : remoteStatements.get( 0 ).getValue().toStatementHandle().signature;
         // END HACK
         return this.withExecutionTargets( quorum );
+    }
+
+
+    public StatementInfos toPreparedStatement( StatementHandle remoteStatement ) {
+        this.statementHandle.signature = remoteStatement.signature;
+        return this;
     }
 }

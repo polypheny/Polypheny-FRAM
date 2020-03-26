@@ -17,14 +17,14 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import javax.transaction.xa.Xid;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.standalone.transaction.TransactionHandle;
 
 
 /**
@@ -35,7 +35,7 @@ public class TransactionInfos {
     private final ConnectionInfos connection;
     private final TransactionHandle transactionHandle;
 
-    private final Set<RemoteNode> accessedNodes = new HashSet<>();
+    private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
 
     private State state = State.STARTED;
 
@@ -91,12 +91,12 @@ public class TransactionInfos {
     }
 
 
-    public Collection<RemoteNode> getAccessedNodes() {
+    public Collection<AbstractRemoteNode> getAccessedNodes() {
         return Collections.unmodifiableCollection( accessedNodes );
     }
 
 
-    public void addAccessedNodes( Collection<RemoteNode> nodes ) {
+    public void addAccessedNodes( Collection<AbstractRemoteNode> nodes ) {
         accessedNodes.addAll( nodes );
         connection.addAccessedNodes( nodes );
     }

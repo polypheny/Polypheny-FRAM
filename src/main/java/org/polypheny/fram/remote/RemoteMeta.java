@@ -17,18 +17,20 @@
 package org.polypheny.fram.remote;
 
 
+import com.google.common.collect.Maps;
+import java.io.Serializable;
+import java.rmi.RemoteException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import org.apache.calcite.avatica.proto.Common;
+import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import java.io.Serializable;
-import java.rmi.RemoteException;
-import java.util.List;
-import java.util.Map;
-import org.apache.calcite.avatica.proto.Common;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 
 
 /**
@@ -225,29 +227,6 @@ public interface RemoteMeta extends java.rmi.Remote {
     /**
      *
      */
-    class MethodRegistry {
-
-        private static final java.util.Map<Short, java.lang.reflect.Method> REGISTRY = new java.util.HashMap<>();
-
-
-        public static java.lang.reflect.Method getMethod( short id ) {
-            return REGISTRY.get( id );
-        }
-
-
-        private static java.lang.reflect.Method putMethod( short id, java.lang.reflect.Method method ) {
-            return REGISTRY.put( id, method );
-        }
-
-
-        private MethodRegistry() {
-        }
-    }
-
-
-    /**
-     *
-     */
     enum Method {
         ABORT( (short) 10, "abortConnection", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
         PREPARE_COMMIT( (short) 20, "prepareCommit", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
@@ -343,10 +322,22 @@ public interface RemoteMeta extends java.rmi.Remote {
         }
 
 
+        /**
+         * @param id The ID of the method
+         * @return Method for the given ID, or null
+         * @see org.jgroups.blocks.MethodLookup
+         */
         public static java.lang.reflect.Method findMethod( final short id ) {
-            return MethodRegistry.getMethod( id );
+            return valueOf( id ).getMethod();
         }
 
+
+        public static Method valueOf( short methodId ) {
+            return LOOKUP.get( methodId );
+        }
+
+
+        private static final Map<Short, Method> LOOKUP = Maps.uniqueIndex( Arrays.asList( Method.values() ), Method::getId );
 
         private final short id;
         private final transient java.lang.reflect.Method method;
@@ -354,23 +345,30 @@ public interface RemoteMeta extends java.rmi.Remote {
 
         Method( final short id, final String methodName, final Class<?>... parameterTypes ) {
             this.id = id;
-            this.method = createAndRegisterMethod( id, methodName, parameterTypes );
-        }
-
-
-        private java.lang.reflect.Method createAndRegisterMethod( final short id, final String methodName, final Class<?>... parameterTypes ) {
             try {
-                final java.lang.reflect.Method method = RemoteMeta.class.getMethod( methodName, parameterTypes );
-                if ( MethodRegistry.putMethod( id, method ) != null ) {
-                    throw new Error( "This should not happen. An ID was used twice." );
-                }
-                return method;
+                this.method = RemoteMeta.class.getMethod( methodName, parameterTypes );
             } catch ( NoSuchMethodException e ) {
                 throw new Error( "This should not happen. Check the enum declarations vs. the declared methods in `" + RemoteMeta.class.getCanonicalName() + "´.", e );
             }
         }
 
 
+        public short getId() {
+            return id;
+        }
+
+
+        public java.lang.reflect.Method getMethod() {
+            return method;
+        }
+
+
+        /**
+         * Creates a org.jgroups.blocks.MethodCall object from this Enum using the given parameters.
+         *
+         * @param parameter The parameters used by the MethodCall
+         * @return The MethodCall object calling this Method using the given parameters.
+         */
         public org.jgroups.blocks.MethodCall call( final Object... parameter ) {
             return new org.jgroups.blocks.MethodCall( this.id, parameter );
         }

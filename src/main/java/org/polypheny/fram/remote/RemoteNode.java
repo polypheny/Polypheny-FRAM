@@ -17,21 +17,15 @@
 package org.polypheny.fram.remote;
 
 
-import java.io.IOException;
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import lombok.EqualsAndHashCode;
 import org.apache.calcite.avatica.proto.Common;
+import org.apache.calcite.avatica.proto.Common.DatabaseProperty;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.jgroups.Address;
-import org.jgroups.Message.Flag;
-import org.jgroups.blocks.MethodCall;
-import org.jgroups.blocks.RequestOptions;
-import org.jgroups.blocks.ResponseMode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
@@ -45,69 +39,26 @@ import org.slf4j.LoggerFactory;
 /**
  * A remote node in a cluster.
  */
-@EqualsAndHashCode(callSuper = false)
-public class RemoteNode implements RemoteMeta, Serializable {
+@EqualsAndHashCode(callSuper = true)
+public class RemoteNode extends AbstractRemoteNode implements Serializable {
 
-    private static final long serialVersionUID = 1583418703L;
+    private static final long serialVersionUID = 2020_03_26__17_20L;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger( RemoteNode.class );
-
-    private static final RequestOptions DEFAULT_REQUEST_OPTIONS = new RequestOptions()
-            .setMode( ResponseMode.GET_FIRST )
-            .setTimeout( TimeUnit.SECONDS.toMillis( 60 ) )
-            .setFlags( Flag.OOB );
-
-    private final Address address;
-    private transient Cluster cluster;
+    protected static final Logger LOGGER = LoggerFactory.getLogger( RemoteNode.class );
 
 
     RemoteNode( final Address address ) {
-        this( address, Cluster.getDefaultCluster() );
+        super( address, Cluster.getDefaultCluster() );
     }
 
 
     RemoteNode( final Address address, final Cluster cluster ) {
-        this.address = address;
-        this.cluster = cluster;
-    }
-
-
-    private void writeObject( final java.io.ObjectOutputStream out ) throws IOException {
-        out.defaultWriteObject();
-
-        out.writeObject( (UUID) cluster.getClusterId() );
-    }
-
-
-    private void readObject( final java.io.ObjectInputStream in ) throws IOException, ClassNotFoundException {
-        in.defaultReadObject();
-
-        this.cluster = Cluster.getCluster( (UUID) in.readObject() );
-    }
-
-
-    public Address getNodeAddress() {
-        return this.address;
-    }
-
-
-    public Cluster getCluster() {
-        return this.cluster;
-    }
-
-
-    protected <ReturnType> ReturnType callRemoteMethod( final MethodCall methodCall ) throws RemoteException {
-        return callRemoteMethod( DEFAULT_REQUEST_OPTIONS, methodCall );
-    }
-
-
-    protected <ReturnType> ReturnType callRemoteMethod( final RequestOptions requestOptions, final MethodCall methodCall ) throws RemoteException {
-        return this.cluster.callMethod( requestOptions, methodCall, this );
+        super( address, cluster );
     }
 
 
     @Override
-    public Map<Common.DatabaseProperty, Serializable> getDatabaseProperties( RemoteConnectionHandle remoteConnectionHandle ) throws RemoteException {
+    public Map<DatabaseProperty, Serializable> getDatabaseProperties( RemoteConnectionHandle remoteConnectionHandle ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
@@ -269,11 +220,5 @@ public class RemoteNode implements RemoteMeta, Serializable {
 
         LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
         return null; //
-    }
-
-
-    @Override
-    public String toString() {
-        return this.address.toString();
     }
 }

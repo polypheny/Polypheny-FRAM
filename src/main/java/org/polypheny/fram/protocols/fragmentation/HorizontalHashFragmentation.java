@@ -17,25 +17,21 @@
 package org.polypheny.fram.protocols.fragmentation;
 
 
+import java.rmi.RemoteException;
+import java.util.List;
+import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
+import org.apache.calcite.avatica.Meta.ExecuteResult;
+import org.apache.calcite.avatica.Meta.PrepareCallback;
+import org.apache.calcite.avatica.NoSuchStatementException;
+import org.apache.calcite.avatica.proto.Common.TypedValue;
+import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
+import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.FragmentationProtocol;
 import org.polypheny.fram.remote.Cluster;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
-import java.rmi.RemoteException;
-import java.util.List;
-import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
-import org.apache.calcite.avatica.Meta.ExecuteResult;
-import org.apache.calcite.avatica.Meta.Frame;
-import org.apache.calcite.avatica.Meta.PrepareCallback;
-import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.avatica.MissingResultsException;
-import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.proto.Common.TypedValue;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
-import org.apache.calcite.sql.SqlNode;
 
 
 public class HorizontalHashFragmentation extends AbstractProtocol implements FragmentationProtocol {
@@ -49,94 +45,45 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public ConnectionProperties connectionSync( Cluster cluster, ConnectionInfos connection, ConnectionProperties newConnectionProperties ) {
+    public ExecuteResult prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
         return null;
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataDefinition( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
+    public ExecuteResult prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
         return null;
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataManipulation( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) {
         return null;
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataQuery( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
-        return null;
-    }
-
-
-    @Override
-    public ExecuteResult prepareAndExecuteTransactionCommit( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
-        return null;
-    }
-
-
-    @Override
-    public ExecuteResult prepareAndExecuteTransactionRollback( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
-        return null;
-    }
-
-
-    @Override
-    public StatementInfos prepareDataManipulation( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) {
-        return null;
-    }
-
-
-    @Override
-    public StatementInfos prepareDataQuery( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) {
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) {
         // Map<Key, Collection<RemoteNodes>> Schema.find( key, Attributes...)
         return null;
     }
 
 
     @Override
-    public ExecuteResult execute( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
+    public ExecuteResult execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
         return null;
     }
 
 
     @Override
-    public ExecuteBatchResult executeBatch( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+    public ExecuteBatchResult executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
         return null;
     }
 
 
-    @Override
-    public Frame fetch( Cluster cluster, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
-        return null;
-    }
-
-
-    @Override
-    public void commit( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction ) {
-
-    }
-
-
-    @Override
-    public void rollback( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction ) {
-
-    }
-
-
-    @Override
-    public void closeStatement( Cluster cluster, StatementInfos statement ) {
-
-    }
-
-
-    @Override
-    public void closeConnection( Cluster cluster, ConnectionInfos connection ) {
-
-    }
+    /*
+     *
+     */
 
 
     @Override

@@ -53,8 +53,6 @@ import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParser.Config;
 import org.polypheny.fram.AbstractCatalog;
 import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.RemoteMeta;
-import org.polypheny.fram.remote.RemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
@@ -69,12 +67,11 @@ import org.slf4j.LoggerFactory;
 /**
  * This is the local Node.
  * <p>
- * {@link DataDistributionUnitMeta} uses {@link RemoteNode} which is the remote representation of instances of this class.
  * This class uses {@link JdbcXAMeta} to access the underlying Database.
  */
-class SimpleNode extends AbstractLocalNode implements RemoteMeta {
+class LocalNode extends AbstractLocalNode {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger( SimpleNode.class );
+    private static final Logger LOGGER = LoggerFactory.getLogger( LocalNode.class );
 
     private final XAMeta xaMeta;
     private final DataSource dataSource;
@@ -84,7 +81,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
     private final Map<String, StatementInfos> remoteToLocalStatementMap = new HashMap<>();
 
 
-    private SimpleNode() {
+    private LocalNode() {
         this.xaMeta = DatabaseHolder.storage;
         this.dataSource = DatabaseHolder.storageDataSource;
         this.xaDataSource = DatabaseHolder.storageXaDataSource;
@@ -126,7 +123,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             return remoteToLocalConnectionMap.computeIfAbsent( connectionHandle.id, cid -> {
                 // this is an unknown connection
                 // its first occurrence creates a new connection here to represent the original connection
-                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( cid ), SimpleNode.this.getSqlParserConfig(), SimpleNode.this.getDataSource() );
+                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( cid ) );
                 xaMeta.openConnection( localConnection.getConnectionHandle(), null );
                 return localConnection;
             } );
@@ -611,7 +608,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
     private static final PrepareCallback NOOP_PREPARE_CALLBACK = new PrepareCallback() {
         @Override
         public Object getMonitor() {
-            return SimpleNode.class;
+            return LocalNode.class;
         }
 
 
@@ -633,7 +630,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     private static class SingletonHolder {
 
-        private static final SimpleNode INSTANCE = new SimpleNode();
+        private static final LocalNode INSTANCE = new LocalNode();
 
 
         private SingletonHolder() {
@@ -644,7 +641,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
     private static final Void VOID = null;
 
 
-    static SimpleNode getInstance() {
+    static LocalNode getInstance() {
         return SingletonHolder.INSTANCE;
     }
 }

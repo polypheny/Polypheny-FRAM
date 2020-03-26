@@ -14,34 +14,18 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.remote;
 
 
-import java.util.UUID;
+import org.jgroups.Address;
 
 
-/**
- *
- */
-class PolyCatalog extends AbstractCatalog {
+public abstract class AbstractNode implements RemoteMeta {
 
-    @Override
-    public UUID getNodeId() {
-        throw new UnsupportedOperationException( "Not implemented yet." );
+    public AbstractNode() {
+        super();
     }
 
 
-    private static class SingletonHolder {
-
-        private static PolyCatalog INSTANCE = new PolyCatalog();
-
-
-        private SingletonHolder() {
-        }
-    }
-
-
-    static PolyCatalog getInstance() {
-        return SingletonHolder.INSTANCE;
-    }
+    public abstract Address getNodeAddress();
 }

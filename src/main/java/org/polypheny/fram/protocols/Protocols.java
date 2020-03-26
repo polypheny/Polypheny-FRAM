@@ -17,12 +17,6 @@
 package org.polypheny.fram.protocols;
 
 
-import org.polypheny.fram.protocols.fragmentation.HorizontalHashFragmentation;
-import org.polypheny.fram.protocols.replication.QuorumReplication;
-import org.polypheny.fram.remote.Cluster;
-import org.polypheny.fram.standalone.ConnectionInfos;
-import org.polypheny.fram.standalone.StatementInfos;
-import org.polypheny.fram.standalone.TransactionInfos;
 import java.rmi.RemoteException;
 import java.util.List;
 import java.util.Objects;
@@ -37,12 +31,18 @@ import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
+import org.polypheny.fram.protocols.fragmentation.HorizontalHashFragmentation;
+import org.polypheny.fram.protocols.replication.QuorumReplication;
+import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.TransactionInfos;
 
 
 /**
  * Collection of Well-known Data Management Protocols
  */
 public enum Protocols implements Protocol {
+    PASS_THROUGH( new Passthrough() ),
     ROWA( QuorumReplication.ROWA ),
     HASH_FRAGMENTATION( new HorizontalHashFragmentation() ),
     ;
@@ -84,91 +84,91 @@ public enum Protocols implements Protocol {
 
 
     @Override
-    public ConnectionProperties connectionSync( Cluster cluster, ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
-        return delegate.connectionSync( cluster, connection, newConnectionProperties );
+    public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
+        return delegate.connectionSync( connection, newConnectionProperties );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataDefinition( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return delegate.prepareAndExecuteDataDefinition( cluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    public ExecuteResult prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataManipulation( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return delegate.prepareAndExecuteDataManipulation( cluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    public ExecuteResult prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataQuery( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return delegate.prepareAndExecuteDataQuery( cluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    public ExecuteResult prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteTransactionCommit( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return delegate.prepareAndExecuteTransactionCommit( cluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    public ExecuteResult prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteTransactionRollback( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return delegate.prepareAndExecuteTransactionRollback( cluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    public ExecuteResult prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
     @Override
-    public StatementInfos prepareDataManipulation( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        return delegate.prepareDataManipulation( cluster, connection, statement, sql, maxRowCount );
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        return delegate.prepareDataManipulation( connection, statement, sql, maxRowCount );
     }
 
 
     @Override
-    public StatementInfos prepareDataQuery( Cluster cluster, ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        return delegate.prepareDataQuery( cluster, connection, statement, sql, maxRowCount );
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        return delegate.prepareDataQuery( connection, statement, sql, maxRowCount );
     }
 
 
     @Override
-    public ExecuteResult execute( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
-        return delegate.execute( cluster, connection, transaction, statement, parameterValues, maxRowsInFirstFrame );
+    public ExecuteResult execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
+        return delegate.execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame );
     }
 
 
     @Override
-    public ExecuteBatchResult executeBatch( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return delegate.executeBatch( cluster, connection, transaction, statement, parameterValues );
+    public ExecuteBatchResult executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+        return delegate.executeBatch( connection, transaction, statement, parameterValues );
     }
 
 
     @Override
-    public Frame fetch( Cluster cluster, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
-        return delegate.fetch( cluster, statementHandle, offset, fetchMaxRowCount );
+    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
+        return delegate.fetch( statementHandle, offset, fetchMaxRowCount );
     }
 
 
     @Override
-    public void commit( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        delegate.commit( cluster, connection, transaction );
+    public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
+        delegate.commit( connection, transaction );
     }
 
 
     @Override
-    public void rollback( Cluster cluster, ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        delegate.rollback( cluster, connection, transaction );
+    public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
+        delegate.rollback( connection, transaction );
     }
 
 
     @Override
-    public void closeStatement( Cluster cluster, StatementInfos statement ) throws RemoteException {
-        delegate.closeStatement( cluster, statement );
+    public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
+        delegate.closeStatement( connection, statement );
     }
 
 
     @Override
-    public void closeConnection( Cluster cluster, ConnectionInfos connection ) throws RemoteException {
-        delegate.closeConnection( cluster, connection );
+    public void closeConnection( ConnectionInfos connection ) throws RemoteException {
+        delegate.closeConnection( connection );
     }
 }

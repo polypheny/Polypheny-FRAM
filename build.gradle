@@ -123,7 +123,7 @@ repositories {
 
 
 def calciteVersion = '1.22.0' /* KEEP THIS VERSION */
-def avaticaVersion = '1.16.0-POLYPHENY-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
+def avaticaVersion = '1.16.1-POLYPHENY-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 def log4jVersion = '2.12.1'
 
 
@@ -136,6 +136,7 @@ dependencies {
     // ///// //// /// // /
     // STANDALONE DDBMS
     // Apache Calcite Avatica (Apache 2.0)
+    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
@@ -179,8 +180,6 @@ dependencies {
     // TESTING (Eclipse Public License 2.0)
     testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.1'
     testImplementation group: 'org.hamcrest', name: 'hamcrest-library', version: '2.2'
-    // Apache Calcite Avatica (Apache 2.0)
-    testImplementation group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
     // Apache Calcite (Apache 2.0)
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'

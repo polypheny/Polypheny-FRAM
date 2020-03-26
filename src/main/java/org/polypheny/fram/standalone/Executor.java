@@ -14,17 +14,12 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.standalone;
 
 
-/**
- *
- */
-public class DataDistributionUnitImpl extends AbstractDataDistributionUnit // implements DataDistributionUnit
-{
+public class Executor {
 
-    public DataDistributionUnitImpl() {
-        super( PolyphenyDbNode.getInstance() );
-        throw new UnsupportedOperationException( "Not implemented yet." );
+
+    public Executor() {
     }
 }

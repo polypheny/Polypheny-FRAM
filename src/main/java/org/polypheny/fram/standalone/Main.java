@@ -45,7 +45,7 @@ import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.polypheny.fram.metrics.avatica.MetricsSystemAdapter;
-import org.polypheny.fram.standalone.SimpleNode.DatabaseHolder;
+import org.polypheny.fram.standalone.LocalNode.DatabaseHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

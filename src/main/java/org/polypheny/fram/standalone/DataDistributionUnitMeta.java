@@ -17,10 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.AbstractDataDistributionUnit;
-import org.polypheny.fram.protocols.Protocol;
-import org.polypheny.fram.protocols.Protocols;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
@@ -41,12 +37,21 @@ import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.avatica.remote.ProtobufMeta;
 import org.apache.calcite.avatica.remote.TypedValue;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlSetOption;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.RelConversionException;
 import org.apache.calcite.tools.ValidationException;
+import org.polypheny.fram.AbstractDataDistributionUnit;
+import org.polypheny.fram.protocols.Protocol;
+import org.polypheny.fram.protocols.Protocols;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +66,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
     public static final String DATABASE_ADMIN_USERNAME = "pa";
 
 
-    public static Meta newMetaInstance() {
+    public static ProtobufMeta newMetaInstance() {
         return new DataDistributionUnitMeta();
     }
 
@@ -78,9 +83,11 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
     protected final Timer closeConnectionDurationTimer;
     protected final Timer connectionSyncDurationTimer;
 
+    protected volatile Protocol protocol = Protocols.ROWA;
+
 
     private DataDistributionUnitMeta() {
-        super( SimpleNode.getInstance() );
+        super( LocalNode.getInstance() );
 
         this.executionDurationTimer = Metrics.timer( "meta.execute", Tags.empty() );
         this.commitDurationTimer = Metrics.timer( "meta.commit", Tags.empty() );
@@ -258,20 +265,14 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     private SqlNode parseSql( final Planner planner, final String sql ) throws SqlParseException {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "parseSql( planner: {}, sql: {} )", planner, sql );
-            }
+            LOGGER.trace( "parseSql( planner: {}, sql: {} )", planner, sql );
 
             final SqlNode result = plannerParseStringTimer.recordCallable( () -> planner.parse( sql ) );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "parseSql( planner: {}, sql: {} ) = {}", planner, sql, result );
-            }
+            LOGGER.trace( "parseSql( planner: {}, sql: {} ) = {}", planner, sql, result );
             return result;
         } catch ( IllegalArgumentException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Wrong planner state. ", ex );
-            }
+            LOGGER.debug( "Wrong planner state. ", ex );
             throw Utils.extractAndThrow( ex );
         } catch ( SqlParseException ex ) {
             throw ex;
@@ -286,20 +287,14 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     private SqlNode validateSql( final Planner planner, final SqlNode sql ) throws ValidationException {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "validateSql( planner: {}, sql: {} )", planner, sql );
-            }
+            LOGGER.trace( "validateSql( planner: {}, sql: {} )", planner, sql );
 
             final SqlNode result = plannerValidateSqlTimer.recordCallable( () -> planner.validate( sql ) );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "validateSql( planner: {}, sql: {} ) = {}", planner, sql, result );
-            }
+            LOGGER.trace( "validateSql( planner: {}, sql: {} ) = {}", planner, sql, result );
             return result;
         } catch ( IllegalArgumentException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Wrong planner state. ", ex );
-            }
+            LOGGER.debug( "Wrong planner state. ", ex );
             throw Utils.extractAndThrow( ex );
         } catch ( ValidationException ex ) {
             throw ex;
@@ -318,20 +313,14 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
     @Deprecated
     private RelNode convertSql( final Planner planner, final SqlNode sql ) throws RelConversionException {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "convertSql( planner: {}, sql: {} )", planner, sql );
-            }
+            LOGGER.trace( "convertSql( planner: {}, sql: {} )", planner, sql );
 
             final RelNode result = plannerRelSqlTimer.recordCallable( () -> planner.rel( sql ).project() );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "convertSql( planner: {}, sql: {} ) = {}", planner, sql, result );
-            }
+            LOGGER.trace( "convertSql( planner: {}, sql: {} ) = {}", planner, sql, result );
             return result;
         } catch ( IllegalArgumentException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Wrong planner state. ", ex );
-            }
+            LOGGER.debug( "Wrong planner state. ", ex );
             throw Utils.extractAndThrow( ex );
         } catch ( RelConversionException ex ) {
             throw ex;
@@ -346,15 +335,11 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public StatementHandle prepare( final ConnectionHandle connectionHandle, final String sql, final long maxRowCount ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepare( connectionHandle: {}, sql: {}, maxRowCount: {} )", connectionHandle, sql, maxRowCount );
-        }
+        LOGGER.trace( "prepare( connectionHandle: {}, sql: {}, maxRowCount: {} )", connectionHandle, sql, maxRowCount );
 
         final ConnectionInfos connection = getConnection( connectionHandle );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepare() -- connection: {}", connection );
-        }
+        LOGGER.trace( "prepare() -- connection: {}", connection );
 
         final Planner planner = connection.getPlanner();
 
@@ -362,17 +347,13 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
         try {
             sqlTreeParsed = parseSql( planner, sql );
         } catch ( SqlParseException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while parsing sql: " + sql, ex );
-            }
+            LOGGER.debug( "Exception while parsing sql: " + sql, ex );
             throw Utils.extractAndThrow( ex );
         }
 
         if ( !sqlTreeParsed.isA( SqlKind.TOP_LEVEL ) ) {
             // SqlKind.TOP_LEVEL = QUERY, DML, DDL
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Unsupported Operation: `" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." );
-            }
+            LOGGER.debug( "Unsupported Operation: `" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." );
             throw Utils.extractAndThrow( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
         }
 
@@ -380,9 +361,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             /*
              * Branching off DataDefinition
              */
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Unsupported Operation: DDL is not supported yet." );
-            }
+            LOGGER.debug( "Unsupported Operation: DDL is not supported yet." );
             throw Utils.extractAndThrow( new UnsupportedOperationException( "Not supported yet." ) );
         }
 
@@ -394,23 +373,9 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
         try {
             sqlTreeValidated = validateSql( planner, sqlTreeParsed );
         } catch ( ValidationException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while validating the statement.", ex );
-            }
+            LOGGER.debug( "Exception while validating the statement.", ex );
             throw Utils.extractAndThrow( ex );
         }
-/*
-        final RelNode relTree;
-        try {
-            relTree = convertSql( planner, sqlTreeValidated );
-        } catch ( RelConversionException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while converting the statement.", ex );
-            }
-            throw Utils.extractAndThrow( ex );
-        }
-        final SqlNode sqlTreeGenerated = SimpleNode.getInstance().getRelToSqlConverter().implement( relTree ).asStatement();
-*/
         final SqlNode sqlTreeGenerated = sqlTreeValidated;
 
         StatementInfos statement = connection.createStatement();
@@ -438,28 +403,20 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             }
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepare( connectionHandle: {}, sql: {}, maxRowCount: {} ) = {}", connectionHandle, sql, maxRowCount, statement.getStatementHandle() );
-        }
+        LOGGER.trace( "prepare( connectionHandle: {}, sql: {}, maxRowCount: {} ) = {}", connectionHandle, sql, maxRowCount, statement.getStatementHandle() );
         return statement.getStatementHandle();
     }
 
 
     private StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareDataManipulation( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
-            }
-
-            final Protocol protocol = Protocols.ROWA;
+            LOGGER.trace( "prepareDataManipulation( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
 
             final StatementInfos result = prepareTimer.recordCallable(
-                    () -> protocol.prepareDataManipulation( defaultCluster, connection, statement, sql, maxRowCount )
+                    () -> protocol.prepareDataManipulation( connection, statement, sql, maxRowCount )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareDataManipulation( connection: {}, sql: {}, maxRowCount: {} ) = {}", connection, sql, maxRowCount, result );
-            }
+            LOGGER.trace( "prepareDataManipulation( connection: {}, sql: {}, maxRowCount: {} ) = {}", connection, sql, maxRowCount, result );
             return result;
         } catch ( RemoteException ex ) {
             LOGGER.warn( "Exception occured", ex );
@@ -472,19 +429,13 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     private StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
         try {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
-            }
-
-            final Protocol protocol = Protocols.ROWA;
+            LOGGER.debug( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
 
             final StatementInfos result = prepareTimer.recordCallable(
-                    () -> protocol.prepareDataQuery( defaultCluster, connection, statement, sql, maxRowCount )
+                    () -> protocol.prepareDataQuery( connection, statement, sql, maxRowCount )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} ) = {}", connection, sql, maxRowCount, result );
-            }
+            LOGGER.trace( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} ) = {}", connection, sql, maxRowCount, result );
             return result;
         } catch ( RemoteException ex ) {
             throw Utils.extractAndThrow( ex );
@@ -503,17 +454,13 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public ExecuteResult prepareAndExecute( final StatementHandle statementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws NoSuchStatementException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute( statementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", statementHandle, sql, maxRowCount, maxRowsInFirstFrame, callback );
-        }
+        LOGGER.trace( "prepareAndExecute( statementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", statementHandle, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         final ConnectionInfos connection = getConnection( statementHandle );
         final TransactionInfos transaction = connection.getOrStartTransaction();
         final StatementInfos statement = getStatement( statementHandle );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute() -- connection: {}, transaction: {}, statement: {}", connection, transaction, statement );
-        }
+        LOGGER.trace( "prepareAndExecute() -- connection: {}, transaction: {}, statement: {}", connection, transaction, statement );
 
         final Planner planner = connection.getPlanner();
 
@@ -521,17 +468,13 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
         try {
             sqlTreeParsed = parseSql( planner, sql );
         } catch ( SqlParseException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while parsing sql: " + sql, ex );
-            }
+            LOGGER.debug( "Exception while parsing sql: " + sql, ex );
             throw Utils.extractAndThrow( ex );
         }
 
         if ( !sqlTreeParsed.isA( SqlKind.TOP_LEVEL ) ) {
             // SqlKind.TOP_LEVEL = QUERY, DML, DDL
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Unsupported Operation: `{}´ is not TOP_LEVEL.", sqlTreeParsed.getKind() );
-            }
+            LOGGER.debug( "Unsupported Operation: `{}´ is not TOP_LEVEL.", sqlTreeParsed.getKind() );
             throw Utils.extractAndThrow( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
         }
 
@@ -549,23 +492,9 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
         try {
             sqlTreeValidated = validateSql( planner, sqlTreeParsed );
         } catch ( ValidationException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while validating the statement.", ex );
-            }
+            LOGGER.debug( "Exception while validating the statement.", ex );
             throw Utils.extractAndThrow( ex );
         }
-/*
-        final RelNode relTree;
-        try {
-            relTree = convertSql( planner, sqlTreeValidated );
-        } catch ( RelConversionException ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Exception while converting the statement.", ex );
-            }
-            throw Utils.extractAndThrow( ex );
-        }
-        final SqlNode sqlTreeGenerated = SimpleNode.getInstance().getRelToSqlConverter().implement( relTree ).asStatement();
- */
         final SqlNode sqlTreeGenerated = sqlTreeValidated;
 
         final ExecuteResult result;
@@ -602,6 +531,9 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             case ROLLBACK:
                 return prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
+            case SET_OPTION:
+                return prepareAndExecuteSetOption( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+
             case ALTER_SESSION:
                 throw new UnsupportedOperationException( "Not supported." );
 
@@ -612,22 +544,16 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
         // default:
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-            }
-
-            final Protocol protocol = Protocols.ROWA;
+            LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             final ExecuteResult result = executionDurationTimer.recordCallable(
-                    () -> protocol.prepareAndExecuteDataDefinition( defaultCluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
+                    () -> protocol.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
             // force a new planner since the schema has changed
             connection.getPlanner( true );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            }
+            LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
             throw Utils.extractAndThrow( ex );
@@ -638,52 +564,97 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
 
     private ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-        }
+        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         this.commit( connection, transaction );
 
         final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-        }
+        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
         return result;
     }
 
 
     private ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-        }
+        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         this.rollback( connection, transaction );
 
         final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-        }
+        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
         return result;
+    }
+
+
+    private ExecuteResult prepareAndExecuteSetOption( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+        LOGGER.trace( "prepareAndExecuteSetOption( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+        String optionName = sql.accept( new SqlBasicVisitor<String>() {
+            @Override
+            public String visit( SqlCall call ) {
+                if ( call instanceof SqlSetOption ) {
+                    return ((SqlSetOption) call).getName().getSimple();
+                }
+                return super.visit( call );
+            }
+        } );
+
+        switch ( optionName.toUpperCase() ) {
+            case "FRAM_PROTOCOL":
+                String protocolEnumName = sql.accept( new SqlBasicVisitor<String>() {
+                    @Override
+                    public String visit( SqlCall call ) {
+                        if ( call instanceof SqlSetOption ) {
+                            return ((SqlSetOption) call).getValue().accept( new SqlBasicVisitor<String>() {
+                                @Override
+                                public String visit( SqlLiteral literal ) {
+                                    return literal.toValue();
+                                }
+
+
+                                @Override
+                                public String visit( SqlIdentifier id ) {
+                                    return id.getSimple();
+                                }
+                            } );
+                        }
+                        return super.visit( call );
+                    }
+                } );
+
+                if ( protocolEnumName == null || protocolEnumName.isEmpty() ) {
+                    throw new IllegalArgumentException( "Protocol name == null or \"\"" );
+                }
+
+                this.switchProtocol( Protocols.valueOf( protocolEnumName.toUpperCase() ) );
+                break;
+
+            default:
+                throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+
+        final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
+        LOGGER.trace( "prepareAndExecuteSetOption( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
+        return result;
+    }
+
+
+    private synchronized void switchProtocol( Protocol newProtocol ) {
+        LOGGER.info( "New Protocol {} -- Old Protocol {}", newProtocol, protocol );
+        this.protocol = newProtocol;
     }
 
 
     private ExecuteResult prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         try {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "prepareAndExecuteDataManipulation(connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-            }
-
-            final Protocol protocol = Protocols.ROWA;
+            LOGGER.debug( "prepareAndExecuteDataManipulation(connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             final ExecuteResult result = executionDurationTimer.recordCallable(
-                    () -> protocol.prepareAndExecuteDataManipulation( defaultCluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
+                    () -> protocol.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            }
+            LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
             throw Utils.extractAndThrow( ex );
@@ -695,19 +666,13 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     private ExecuteResult prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         try {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-            }
-
-            final Protocol protocol = Protocols.ROWA;
+            LOGGER.debug( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             final ExecuteResult result = executionDurationTimer.recordCallable(
-                    () -> protocol.prepareAndExecuteDataQuery( defaultCluster, connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
+                    () -> protocol.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            }
+            LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
             throw Utils.extractAndThrow( ex );
@@ -732,9 +697,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public ExecuteResult execute( final StatementHandle statementHandle, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "execute( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
-        }
+        LOGGER.trace( "execute( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
 
         final List<Common.TypedValue> serializedParameterValues = new LinkedList<>();
         for ( TypedValue value : parameterValues ) {
@@ -743,31 +706,23 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
         final ExecuteResult result = this.executeProtobuf( statementHandle, serializedParameterValues, maxRowsInFirstFrame );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "execute( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, result );
-        }
+        LOGGER.trace( "execute( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, result );
         return result;
     }
 
 
     public ExecuteResult executeProtobuf( final StatementHandle statementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
-            }
+            LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
             final ConnectionInfos connection = getConnection( statementHandle );
             final TransactionInfos transaction = connection.getOrStartTransaction();
             final StatementInfos statement = getStatement( statementHandle );
 
-            final Protocol protocol = Protocols.ROWA;
-
             final ExecuteResult result = executionDurationTimer.recordCallable(
-                    () -> protocol.execute( defaultCluster, connection, transaction, statement, parameterValues, maxRowsInFirstFrame )
+                    () -> protocol.execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, result );
-            }
+            LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, result );
             return result;
         } catch ( NoSuchStatementException ex ) {
             throw ex;
@@ -781,9 +736,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public ExecuteBatchResult executeBatch( final StatementHandle statementHandle, final List<List<TypedValue>> parameterValues ) throws NoSuchStatementException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} )", statementHandle, parameterValues );
-        }
+        LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} )", statementHandle, parameterValues );
 
         final List<UpdateBatch> serializedParameterValues = new LinkedList<>();
         for ( List<TypedValue> batch : parameterValues ) {
@@ -796,9 +749,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
         final ExecuteBatchResult result = this.executeBatchProtobuf( statementHandle, serializedParameterValues );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, result );
-        }
+        LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, result );
         return result;
     }
 
@@ -806,22 +757,16 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
     @Override
     public ExecuteBatchResult executeBatchProtobuf( final StatementHandle statementHandle, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException {
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} )", statementHandle, parameterValues );
-            }
+            LOGGER.trace( "executeBatch( statementHandle: {}, parameterValues: {} )", statementHandle, parameterValues );
             final ConnectionInfos connection = getConnection( statementHandle );
             final TransactionInfos transaction = connection.getOrStartTransaction();
             final StatementInfos statement = getStatement( statementHandle );
 
-            final Protocol protocol = Protocols.ROWA;
-
             final ExecuteBatchResult result = executionDurationTimer.recordCallable(
-                    () -> protocol.executeBatch( defaultCluster, connection, transaction, statement, parameterValues )
+                    () -> protocol.executeBatch( connection, transaction, statement, parameterValues )
             );
 
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "prepareAndExecute( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, result );
-            }
+            LOGGER.trace( "prepareAndExecute( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, result );
             return result;
         } catch ( NoSuchStatementException ex ) {
             throw ex;
@@ -835,9 +780,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "fetch( statementHandle: {}, offset: {}, fetchMaxRowCount: {} )", statementHandle, offset, fetchMaxRowCount );
-        }
+        LOGGER.trace( "fetch( statementHandle: {}, offset: {}, fetchMaxRowCount: {} )", statementHandle, offset, fetchMaxRowCount );
 
         final StatementInfos statement = getStatement( statementHandle );
         final ResultSetInfos resultSet = statement.getResultSet();
@@ -849,9 +792,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             throw Utils.extractAndThrow( ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "fetch( statementHandle: {}, offset: {}, fetchMaxRowCount: {} ) = {}", statementHandle, offset, fetchMaxRowCount, result );
-        }
+        LOGGER.trace( "fetch( statementHandle: {}, offset: {}, fetchMaxRowCount: {} ) = {}", statementHandle, offset, fetchMaxRowCount, result );
         return result;
     }
 
@@ -869,9 +810,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
      */
     @Override
     public StatementHandle createStatement( final ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "createStatement( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "createStatement( connectionHandle: {} )", connectionHandle );
 
         final StatementHandle result;
         synchronized ( openConnections ) {
@@ -880,18 +819,14 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             result = si.getStatementHandle();
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "createStatement( connectionHandle: {} ) = {}", connectionHandle, result );
-        }
+        LOGGER.trace( "createStatement( connectionHandle: {} ) = {}", connectionHandle, result );
 
         return result;
     }
 
 
     private StatementInfos getStatement( final StatementHandle statementHandle ) throws NoSuchStatementException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getStatement( statementHandle: {} )", statementHandle );
-        }
+        LOGGER.trace( "getStatement( statementHandle: {} )", statementHandle );
 
         final StatementInfos result;
         synchronized ( openStatements ) {
@@ -901,9 +836,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             throw new NoSuchStatementException( statementHandle );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getStatement( statementHandle: {} ) = {}", statementHandle, result );
-        }
+        LOGGER.trace( "getStatement( statementHandle: {} ) = {}", statementHandle, result );
 
         return result;
     }
@@ -911,17 +844,14 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public void closeStatement( final StatementHandle statementHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getStatement( statementHandle: {} )", statementHandle );
-        }
+        LOGGER.trace( "getStatement( statementHandle: {} )", statementHandle );
+        final ConnectionInfos connection = getConnection( statementHandle );
 
         final StatementInfos statement;
         synchronized ( openStatements ) {
             statement = openStatements.remove( statementHandle.toString() );
             if ( statement == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "`close()` on unknown statement {}", statementHandle );
-                }
+                LOGGER.debug( "`close()` on unknown statement {}", statementHandle );
                 return;
             }
         }
@@ -933,11 +863,9 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
         // TODO: close remote statements and result sets
         //throw new UnsupportedOperationException( "Not supported yet." );
 
-        final Protocol protocol = Protocols.ROWA;
-
         try {
             final boolean success = closeStatementDurationTimer.recordCallable( () -> {
-                protocol.closeStatement( defaultCluster, statement );
+                protocol.closeStatement( connection, statement );
                 return true;
             } );
         } catch ( RemoteException ex ) {
@@ -961,9 +889,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
      */
     @Override
     public void openConnection( final ConnectionHandle connectionHandle, final Map<String, String> info ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "openConnection( connectionHandle: {}, info: {})", connectionHandle, info );
-        }
+        LOGGER.trace( "openConnection( connectionHandle: {}, info: {})", connectionHandle, info );
 
         synchronized ( openConnections ) {
             if ( openConnections.containsKey( connectionHandle.toString() ) ) {
@@ -990,100 +916,74 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
                 LOGGER.debug( "User {}:{} successfully logged in.", username, userId );
             }
 
-            ConnectionInfos connectionProperties = new ConnectionInfos( this.nodeId, userId, connectionHandle, this.localNode.getSqlParserConfig(), this.localNode.getDataSource() );
+            ConnectionInfos connectionProperties = new ConnectionInfos( this.nodeId, userId, connectionHandle );
             openConnections.put( connectionHandle.toString(), connectionProperties );
 
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Number of open connections: {}.", openConnections.size() );
-            }
+            LOGGER.debug( "Number of open connections: {}.", openConnections.size() );
         }
     }
 
 
     private ConnectionInfos getConnection( final ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getConnection( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "getConnection( connectionHandle: {} )", connectionHandle );
 
         final ConnectionInfos result;
         synchronized ( openConnections ) {
             ConnectionInfos connectionInfos = openConnections.get( connectionHandle.id );
             if ( connectionInfos == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "Connection {} does not exist.", connectionHandle );
-                }
+                LOGGER.debug( "Connection {} does not exist.", connectionHandle );
                 throw new RuntimeException( "Connection does not exist." );
             }
             result = connectionInfos;
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getConnection( connectionHandle: {} ) = {}", connectionHandle, result );
-        }
-
+        LOGGER.trace( "getConnection( connectionHandle: {} ) = {}", connectionHandle, result );
         return result;
     }
 
 
     private ConnectionInfos getConnection( final StatementHandle statementHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getConnection( statementHandle: {} )", statementHandle );
-        }
+        LOGGER.trace( "getConnection( statementHandle: {} )", statementHandle );
 
         final ConnectionInfos result;
         synchronized ( openConnections ) {
             ConnectionInfos connectionInfos = openConnections.get( statementHandle.connectionId );
             if ( connectionInfos == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "Connection {} does not exist.", statementHandle.connectionId );
-                }
+                LOGGER.debug( "Connection {} does not exist.", statementHandle.connectionId );
                 throw new RuntimeException( "Connection does not exist." );
             }
             result = connectionInfos;
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getConnection( statementHandle: {} ) = {}", statementHandle, result );
-        }
-
+        LOGGER.trace( "getConnection( statementHandle: {} ) = {}", statementHandle, result );
         return result;
     }
 
 
     @Override
     public void closeConnection( final ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
 
         final ConnectionInfos connection;
 
         synchronized ( openConnections ) {
             connection = openConnections.remove( connectionHandle.toString() );
             if ( connection == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "`close()` on unknown connection {}", connectionHandle );
-                }
+                LOGGER.debug( "`close()` on unknown connection {}", connectionHandle );
                 return;
             }
 
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "Number of remaining open connections: {}", openConnections.size() );
-            }
+            LOGGER.debug( "Number of remaining open connections: {}", openConnections.size() );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "Closing connection {}", connectionHandle );
-        }
+        LOGGER.trace( "Closing connection {}", connectionHandle );
 
         // TODO: close remote connections and statements
         //throw new UnsupportedOperationException( "Not supported yet." );
 
-        final Protocol protocol = Protocols.ROWA;
-
         try {
             final boolean success = closeConnectionDurationTimer.recordCallable( () -> {
-                protocol.closeConnection( defaultCluster, connection );
+                protocol.closeConnection( connection );
                 return true;
             } );
         } catch ( RemoteException ex ) {
@@ -1102,9 +1002,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public void commit( ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "commit( connectionHandle: {} )", connectionHandle );
 
         final ConnectionInfos connection = getConnection( connectionHandle );
         final TransactionInfos transaction = connection.getTransaction();
@@ -1119,15 +1017,11 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
 
     private void commit( final ConnectionInfos connection, final TransactionInfos transaction ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit( connection: {}, transaction: {} )", connection, transaction );
-        }
-
-        final Protocol protocol = Protocols.ROWA;
+        LOGGER.trace( "commit( connection: {}, transaction: {} )", connection, transaction );
 
         try {
             final boolean success = commitDurationTimer.recordCallable( () -> {
-                protocol.commit( defaultCluster, connection, transaction );
+                protocol.commit( connection, transaction );
                 return true;
             } );
 
@@ -1144,9 +1038,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public void rollback( ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "rollback( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "rollback( connectionHandle: {} )", connectionHandle );
 
         final ConnectionInfos connection = getConnection( connectionHandle );
         final TransactionInfos transaction = connection.getTransaction();
@@ -1161,15 +1053,11 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
 
     private void rollback( final ConnectionInfos connection, final TransactionInfos transaction ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "rollback( connection: {}, transaction: {} )", connection, transaction );
-        }
-
-        final Protocol protocol = Protocols.ROWA;
+        LOGGER.trace( "rollback( connection: {}, transaction: {} )", connection, transaction );
 
         try {
             final boolean success = rollbackDurationTimer.recordCallable( () -> {
-                protocol.rollback( defaultCluster, connection, transaction );
+                protocol.rollback( connection, transaction );
                 return true;
             } );
 
@@ -1188,11 +1076,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
 
     @Override
     public ConnectionProperties connectionSync( final ConnectionHandle connectionHandle, final ConnectionProperties newConnectionProperties ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "connectionSync( connectionHandle: {}, newConnectionProperties: {} )", connectionHandle, newConnectionProperties );
-        }
-
-        final Protocol protocol = Protocols.ROWA;
+        LOGGER.trace( "connectionSync( connectionHandle: {}, newConnectionProperties: {} )", connectionHandle, newConnectionProperties );
 
         final ConnectionProperties result;
         synchronized ( openConnections ) {
@@ -1205,7 +1089,7 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
                     applyConnectionSettings( connectionHandle, connection.getConnectionProperties() );
                     try {
                         final ConnectionProperties resultFromNetwork = connectionSyncDurationTimer.recordCallable( () ->
-                                protocol.connectionSync( defaultCluster, connection, connection.getConnectionProperties() )
+                                protocol.connectionSync( connection, connection.getConnectionProperties() )
                         );
                     } catch ( RemoteException ex ) {
                         LOGGER.warn( "Exception while synchronizing the connection properties.", ex );
@@ -1218,44 +1102,30 @@ class DataDistributionUnitMeta extends AbstractDataDistributionUnit implements M
             } ).getConnectionProperties();
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "connectionSync( connectionHandle: {}, newConnectionProperties: {} ) = {}", connectionHandle, newConnectionProperties, result );
-        }
+        LOGGER.trace( "connectionSync( connectionHandle: {}, newConnectionProperties: {} ) = {}", connectionHandle, newConnectionProperties, result );
 
         return result;
     }
 
 
     protected void applyConnectionSettings( ConnectionHandle connectionHandle, ConnectionProperties properties ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "applyConnectionSettings( connectionHandle: {}, properties: {}", connectionHandle, properties );
-        }
+        LOGGER.trace( "applyConnectionSettings( connectionHandle: {}, properties: {}", connectionHandle, properties );
 
         // TODO: apply on all "sub-connections"
         if ( properties.isAutoCommit() != null ) {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "applyConnectionSettings() -- New value for AutoCommit: {}", properties.isAutoCommit() );
-            }
+            LOGGER.trace( "applyConnectionSettings() -- New value for AutoCommit: {}", properties.isAutoCommit() );
         }
         if ( properties.isReadOnly() != null ) {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "applyConnectionSettings() -- New value for ReadOnly: {}", properties.isReadOnly() );
-            }
+            LOGGER.trace( "applyConnectionSettings() -- New value for ReadOnly: {}", properties.isReadOnly() );
         }
         if ( properties.getTransactionIsolation() != null ) {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "applyConnectionSettings() -- New value for TransactionIsolation: {}", properties.getTransactionIsolation() );
-            }
+            LOGGER.trace( "applyConnectionSettings() -- New value for TransactionIsolation: {}", properties.getTransactionIsolation() );
         }
         if ( properties.getCatalog() != null ) {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "applyConnectionSettings() -- New value for Catalog: {}", properties.getCatalog() );
-            }
+            LOGGER.trace( "applyConnectionSettings() -- New value for Catalog: {}", properties.getCatalog() );
         }
         if ( properties.getSchema() != null ) {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "applyConnectionSettings() -- New value for Schema: {}", properties.getSchema() );
-            }
+            LOGGER.trace( "applyConnectionSettings() -- New value for Schema: {}", properties.getSchema() );
         }
     }
 }

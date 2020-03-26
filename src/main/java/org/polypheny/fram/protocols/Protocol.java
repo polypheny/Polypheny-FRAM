@@ -17,10 +17,6 @@
 package org.polypheny.fram.protocols;
 
 
-import org.polypheny.fram.remote.Cluster;
-import org.polypheny.fram.standalone.ConnectionInfos;
-import org.polypheny.fram.standalone.StatementInfos;
-import org.polypheny.fram.standalone.TransactionInfos;
 import java.rmi.RemoteException;
 import java.util.List;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
@@ -34,6 +30,9 @@ import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
+import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.TransactionInfos;
 
 
 public interface Protocol {
@@ -43,35 +42,35 @@ public interface Protocol {
 
     Protocol setDown( final Protocol protocol );
 
-    ConnectionProperties connectionSync( final Cluster cluster, final ConnectionInfos connection, final ConnectionProperties newConnectionProperties ) throws RemoteException;
+    ConnectionProperties connectionSync( final ConnectionInfos connection, final ConnectionProperties newConnectionProperties ) throws RemoteException;
 
-    ExecuteResult prepareAndExecuteDataDefinition( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    ExecuteResult prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    ExecuteResult prepareAndExecuteDataManipulation( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    ExecuteResult prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    ExecuteResult prepareAndExecuteDataQuery( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    ExecuteResult prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    ExecuteResult prepareAndExecuteTransactionCommit( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    ExecuteResult prepareAndExecuteTransactionRollback( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    StatementInfos prepareDataManipulation( final Cluster cluster, final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
 
-    StatementInfos prepareDataQuery( final Cluster cluster, final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
 
-    ExecuteResult execute( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException;
+    ExecuteResult execute( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException;
 
-    ExecuteBatchResult executeBatch( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
+    ExecuteBatchResult executeBatch( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
 
-    Frame fetch( final Cluster cluster, final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException;
+    Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException;
 
-    void commit( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
+    void commit( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
 
-    void rollback( final Cluster cluster, final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
+    void rollback( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
 
-    void closeStatement( final Cluster cluster, final StatementInfos statement ) throws RemoteException;
+    void closeStatement( final ConnectionInfos connection, final StatementInfos statement ) throws RemoteException;
 
-    void closeConnection( final Cluster cluster, final ConnectionInfos connection ) throws RemoteException;
+    void closeConnection( final ConnectionInfos connection ) throws RemoteException;
 
 
     interface FragmentationProtocol extends Protocol {
