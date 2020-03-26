@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -42,6 +43,7 @@ import lombok.Getter;
 import org.apache.calcite.avatica.proto.Common;
 import org.apache.calcite.avatica.proto.Common.ConnectionProperties;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.jgroups.Address;
 import org.jgroups.JChannel;
@@ -602,9 +604,12 @@ public class Cluster implements MembershipListener {
             LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
         }
 
-        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql()
-                // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
-                .replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" ); // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
+            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+            serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        }
+
         final RspList<RemoteExecuteResult> result;
 
         if ( remoteNodes != null && remoteNodes.size() == 1 && remoteNodes.contains( thisRemoteNode ) ) {

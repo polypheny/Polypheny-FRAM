@@ -68,7 +68,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * This is the local Node.
- *
+ * <p>
  * {@link DataDistributionUnitMeta} uses {@link RemoteNode} which is the remote representation of instances of this class.
  * This class uses {@link JdbcXAMeta} to access the underlying Database.
  */
@@ -569,7 +569,9 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
                 catalogJdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.catalog.name" )
                         + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
                         + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
-                        + ";close_result=true";
+                        + ";close_result=true"
+                        + ";allow_empty_batch=true"
+                ;
 
                 if ( configuration.hasPath( "standalone.datastore.connection.url" ) ) {
                     jdbcConnectionUrl = configuration.getString( "standalone.datastore.connection.url" );
@@ -577,7 +579,9 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
                     jdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.database.name" )
                             + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
                             + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
-                            + ";close_result=true";
+                            + ";close_result=true"
+                            + ";allow_empty_batch=true"
+                    ;
                 }
 
                 org.hsqldb.jdbc.pool.JDBCXADataSource storageJdbcXaDataSource = new org.hsqldb.jdbc.pool.JDBCXADataSource();

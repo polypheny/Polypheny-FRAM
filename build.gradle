@@ -109,7 +109,7 @@ configurations {
 
     compileClasspath.extendsFrom compileOnly, implementation, standaloneImplementation, pdbModuleImplementation
     runtimeClasspath.extendsFrom implementation, runtimeOnly, runtime, standaloneImplementation
-    
+
     testCompileClasspath.extendsFrom testCompileOnly, testImplementation, standaloneImplementation, pdbModuleImplementation
     testRuntimeClasspath.extendsFrom testRuntimeOnly, testRuntime, testImplementation, standaloneImplementation
 }
@@ -184,6 +184,8 @@ dependencies {
     // Apache Calcite (Apache 2.0)
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
+    //
+    testImplementation group: 'org.polypheny', name: 'polypheny-jdbc-driver', version: '1.3' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 
     //
     // ///// //// /// // /
@@ -230,10 +232,10 @@ compileJavacc {
     inputDirectory = file("${generatedDir}/main/fmpp/javacc")
     outputDirectory = file("${generatedDir}/main/javacc")
     arguments = [
-            LOOKAHEAD: '2', // Default: '1'
-            FORCE_LA_CHECK: 'false', // Default: 'false'
+            LOOKAHEAD             : '2', // Default: '1'
+            FORCE_LA_CHECK        : 'false', // Default: 'false'
             CHOICE_AMBIGUITY_CHECK: '2', // Default: '2'
-            OTHER_AMBIGUITY_CHECK: '1', // Default: '1'
+            OTHER_AMBIGUITY_CHECK : '1', // Default: '1'
     ]
 }
 
@@ -249,7 +251,6 @@ jjdoc {
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
-
 
 
 jar {
