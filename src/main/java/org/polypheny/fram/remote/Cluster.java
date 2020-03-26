@@ -791,12 +791,12 @@ public class Cluster implements MembershipListener {
 
 
     public RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        return this.commit( remoteConnectionHandle, remoteTransactionHandle, ALL_NODES_IN_THE_CLUSTER );
+        return this.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle, ALL_NODES_IN_THE_CLUSTER );
     }
 
 
     public RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final RemoteNode... remoteNodes ) throws RemoteException {
-        return this.commit( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+        return this.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
     }
 
 
