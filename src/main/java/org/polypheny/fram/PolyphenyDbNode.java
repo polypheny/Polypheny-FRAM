@@ -63,6 +63,12 @@ class PolyphenyDbNode extends AbstractLocalNode {
 
 
     @Override
+    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public RemoteExecuteBatchResult prepareAndExecuteBatch( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, List<String> sqlCommands ) throws RemoteException {
         return null;
     }
@@ -159,7 +165,7 @@ class PolyphenyDbNode extends AbstractLocalNode {
 
 
     @Override
-    public AbstractCatalog getCatalog() {
+    public Catalog getCatalog() {
         return null;
     }
 

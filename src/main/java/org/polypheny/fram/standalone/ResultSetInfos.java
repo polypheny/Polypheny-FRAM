@@ -50,7 +50,7 @@ public abstract class ResultSetInfos {
     public abstract <ExecuteResultType> ExecuteResultType getExecuteResult();
 
 
-    public Frame fetch( RemoteStatementHandle fromStatementHandle, long offset, int fetchMaxRowCount ) throws RemoteException {
+    public Frame fetch( ConnectionInfos connection, StatementInfos statement, long offset, int fetchMaxRowCount ) throws RemoteException {
         throw new UnsupportedOperationException( "Not supported yet." );
     }
 
@@ -90,8 +90,8 @@ public abstract class ResultSetInfos {
 
 
         @Override
-        public Frame fetch( RemoteStatementHandle fromStatementHandle, long offset, int fetchMaxRowCount ) throws RemoteException {
-            return THIS_IS_A_HACK__PLEASE_REPLACE_ME.fetch( fromStatementHandle, offset, fetchMaxRowCount ).toFrame();
+        public Frame fetch( ConnectionInfos connection, StatementInfos statement, long offset, int fetchMaxRowCount ) throws RemoteException {
+            return THIS_IS_A_HACK__PLEASE_REPLACE_ME.fetch( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
         }
     }
 

@@ -574,6 +574,52 @@ public class Cluster implements MembershipListener {
      */
 
 
+    public RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
+        return this.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, ALL_NODES_IN_THE_CLUSTER );
+    }
+
+
+    public RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
+        return this.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    }
+
+
+    public RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+
+        String serializedCatalogSql = catalogSql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        if ( catalogSql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
+            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+            serializedCatalogSql = serializedCatalogSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        }
+        String serializedStoreSql = storeSql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        if ( storeSql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
+            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+            serializedStoreSql = serializedStoreSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        }
+
+        final RspList<RemoteExecuteResult> result;
+
+        if ( remoteNodes != null && remoteNodes.size() == 1 &&
+                remoteNodes.iterator().next().cluster.equals( this ) &&
+                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
+            LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+            result = new RspList<>( 1 );
+            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ) );
+        } else {
+            result = this.callMethods( Method.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ), remoteNodes );
+        }
+
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes, result );
+        return result;
+    }
+
+
+    /*
+     *
+     */
+
+
     public RspList<RemoteExecuteBatchResult> prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<SqlNode> sqlCommands ) throws RemoteException {
         return this.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, sqlCommands, ALL_NODES_IN_THE_CLUSTER );
     }

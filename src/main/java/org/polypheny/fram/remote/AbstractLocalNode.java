@@ -27,7 +27,7 @@ import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.parser.SqlParser.Config;
 import org.jgroups.Address;
 import org.jgroups.blocks.MethodLookup;
-import org.polypheny.fram.AbstractCatalog;
+import org.polypheny.fram.Catalog;
 
 
 /**
@@ -99,6 +99,6 @@ public abstract class AbstractLocalNode extends AbstractNode implements MethodLo
 
     public abstract DataSource getDataSource();
 
-    public abstract AbstractCatalog getCatalog();
+    public abstract Catalog getCatalog();
 
 }

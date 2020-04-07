@@ -72,7 +72,21 @@ public interface RemoteMeta extends java.rmi.Remote {
      */
     RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
 
-    //RemoteExecuteResult catalogPrepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
+    /**
+     * Prepares and executes a statement.
+     *
+     * @param remoteTransactionHandle (Global) transaction identifier
+     * @param globalCatalogSql the query for the global catalog
+     * @param localStoreSql the quiery for the local store
+     * @param maxRowCount Maximum number of rows for the entire query. Negative for no limit
+     * (different meaning than JDBC).
+     * @param maxRowsInFirstFrame Maximum number of rows for the first frame. This value should
+     * always be less than or equal to {@code maxRowCount} as the number of results are guaranteed
+     * to be restricted by {@code maxRowCount} and the underlying database.
+     * @return Result containing statement ID, and if a query, a result set and
+     * first frame of data
+     */
+    RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
 
     /**
      * Prepares a statement and then executes a number of SQL commands in one pass.
@@ -236,13 +250,14 @@ public interface RemoteMeta extends java.rmi.Remote {
         PREPARE( (short) 50, "prepare", RemoteStatementHandle.class, String.class, long.class ),
         EXECUTE( (short) 60, "execute", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class, int.class ),
         PREPARE_AND_EXECUTE( (short) 70, "prepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class ),
-        //        CATALOG_PREPARE_AND_EXECUTE( (short) 71, "catalogPrepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class ),
+        PREPARE_AND_EXECUTE_DATA_DEFINITION( (short) 71, "prepareAndExecuteDataDefinition", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, String.class, long.class, int.class ),
         PREPARE_AND_EXECUTE_BATCH( (short) 75, "prepareAndExecuteBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         EXECUTE_BATCH( (short) 80, "executeBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         FETCH( (short) 90, "fetch", RemoteStatementHandle.class, long.class, int.class ),
         CLOSE_STATEMENT( (short) 100, "closeStatement", RemoteStatementHandle.class ),
         CLOSE_CONNECTION( (short) 110, "closeConnection", RemoteConnectionHandle.class ),
-        CONNECTION_SYNC( (short) 120, "connectionSync", RemoteConnectionHandle.class, Common.ConnectionProperties.class );
+        CONNECTION_SYNC( (short) 120, "connectionSync", RemoteConnectionHandle.class, Common.ConnectionProperties.class ),
+        ;
         //
 
         //
@@ -287,9 +302,10 @@ public interface RemoteMeta extends java.rmi.Remote {
             return PREPARE_AND_EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
         }
 
-//        public static org.jgroups.blocks.MethodCall catalogPrepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) {
-//            return CATALOG_PREPARE_AND_EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-//        }
+
+        public static org.jgroups.blocks.MethodCall prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String globalCatalogSql, final String localStoreSql, final long maxRowCount, final int maxRowsInFirstFrame ) {
+            return PREPARE_AND_EXECUTE_DATA_DEFINITION.call( remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
+        }
 
 
         public static org.jgroups.blocks.MethodCall prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) {

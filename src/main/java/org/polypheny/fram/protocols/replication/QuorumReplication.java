@@ -17,6 +17,7 @@
 package org.polypheny.fram.protocols.replication;
 
 
+import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
@@ -28,8 +29,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
+import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
+import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.NoSuchStatementException;
+import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
@@ -236,6 +240,19 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
         return resultSetInfos.getExecuteResult();
     }
+
+
+    @Override
+    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
+        throw new UnsupportedOperationException();
+    }
+
+
+    @Override
+    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
+        throw new UnsupportedOperationException();
+    }
+
 
     @Override
     public FragmentationProtocol setFragmentationProtocol( FragmentationProtocol fragmentationProtocol ) {

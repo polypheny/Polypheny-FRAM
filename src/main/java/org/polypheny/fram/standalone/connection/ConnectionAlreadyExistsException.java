@@ -14,25 +14,20 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.standalone.connection;
 
 
-import java.util.UUID;
-import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.Cluster;
+public class ConnectionAlreadyExistsException extends RuntimeException {
+
+    private final String connectionId;
 
 
-/**
- *
- */
-public abstract class AbstractDataDistributionUnit {
+    public ConnectionAlreadyExistsException( String connectionId ) {
+        this.connectionId = connectionId;
+    }
 
 
-    public final UUID nodeId;
-
-
-    public AbstractDataDistributionUnit( final AbstractLocalNode localNode ) {
-        Cluster.getDefaultCluster().connect( localNode );
-        this.nodeId = localNode.getCatalog().getNodeId();
+    public String getConnectionId() {
+        return connectionId;
     }
 }

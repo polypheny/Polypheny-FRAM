@@ -17,14 +17,27 @@
 package org.polypheny.fram;
 
 
+import java.util.UUID;
+import org.polypheny.fram.remote.AbstractLocalNode;
+import org.polypheny.fram.remote.Cluster;
+
+
 /**
  *
  */
-public class DataDistributionUnitImpl extends AbstractDistributionMeta // implements DataDistributionUnit
-{
+public abstract class AbstractDistributionMeta {
 
-    public DataDistributionUnitImpl() {
-        super( PolyphenyDbNode.getInstance() );
-        throw new UnsupportedOperationException( "Not implemented yet." );
+
+    protected final AbstractLocalNode store;
+    protected final Catalog catalog;
+    public final UUID nodeId;
+
+
+    public AbstractDistributionMeta( final AbstractLocalNode localNode ) {
+        this.store = localNode;
+        this.catalog = localNode.getCatalog();
+        this.nodeId = this.catalog.getNodeId();
+
+        Cluster.getDefaultCluster().connect( localNode );
     }
 }

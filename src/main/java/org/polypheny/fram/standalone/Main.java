@@ -45,7 +45,6 @@ import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.polypheny.fram.metrics.avatica.MetricsSystemAdapter;
-import org.polypheny.fram.standalone.LocalNode.DatabaseHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -184,9 +183,12 @@ public class Main {
             prometheusEndpointServer.start();
         }
 
+        // Load the store class
+        Class.forName( Main.configuration().getString( "standalone.datastore.class" ) );
+
         if ( Main.configuration().getBoolean( "standalone.datastore.passthrough.enabled" ) ) {
             LOGGER.info( "Creating local HSQLDB service" );
-            final LocalService hsqldb = new LocalService( new JdbcMeta( DatabaseHolder.jdbcConnectionUrl, "SA", "" ) );
+            final LocalService hsqldb = new LocalService( new JdbcMeta( DataStore.getStorageJdbcConnectionUrl(), "SA", "" ) );
             final int passthroughPort = Main.configuration().getInt( "standalone.datastore.passthrough.port" );
 
             // Construct the hsqldbPassThroughServer
@@ -207,7 +209,7 @@ public class Main {
         //
 
         LOGGER.info( "Creating Polypheny-FRAM service" );
-        LocalService polyphenyFram = new LocalService( DataDistributionUnitMeta.newMetaInstance(), new MetricsSystemAdapter() );
+        LocalService polyphenyFram = new LocalService( StandaloneDistributionMeta.newMetaInstance(), new MetricsSystemAdapter() );
 
         // Construct the polyphenyFramServer
         LOGGER.info( "Creating the server for the Polypheny-FRAM service" );

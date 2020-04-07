@@ -87,7 +87,6 @@ public class Utils {
 
 
     public static RuntimeException extractAndThrow( final Throwable t ) throws RuntimeException, Error {
-
         if ( t instanceof RemoteException == false ) {
             return new RuntimeException( t.getMessage(), t.getCause() );
         }

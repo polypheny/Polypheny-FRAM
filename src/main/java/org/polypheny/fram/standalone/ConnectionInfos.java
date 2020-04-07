@@ -27,20 +27,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.EqualsAndHashCode;
-import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.plan.Contexts;
-import org.apache.calcite.plan.ConventionTraitDef;
-import org.apache.calcite.rel.RelCollationTraitDef;
-import org.apache.calcite.rel.type.RelDataTypeSystem;
-import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
-import org.apache.calcite.tools.RuleSets;
+import org.polypheny.fram.Catalog;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
@@ -76,6 +69,7 @@ public class ConnectionInfos {
 
     private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
 
+    private Catalog catalog;
     private Cluster cluster;
     private TransactionInfos currentTransaction;
     private Planner planner;
@@ -103,6 +97,7 @@ public class ConnectionInfos {
             this.connectionId = connectionId;
         }
 
+        this.catalog = GlobalCatalog.getInstance();
         this.cluster = Cluster.getDefaultCluster();
     }
 
@@ -162,6 +157,11 @@ public class ConnectionInfos {
     /*
      *
      */
+
+
+    public Catalog getCatalog() {
+        return this.catalog;
+    }
 
 
     public Cluster getCluster() {
@@ -230,16 +230,6 @@ public class ConnectionInfos {
             return this.planner;
         }
 
-        final SchemaPlus rootSchema = Frameworks.createRootSchema( true );
-        return this.planner = Frameworks.getPlanner( Frameworks.newConfigBuilder()
-                .parserConfig( this.getCluster().getLocalNode().getSqlParserConfig() )
-                // CAUTION! Hard coded HSQLDB information
-                .defaultSchema( rootSchema.add( "PUBLIC", JdbcSchema.create( rootSchema, "HSQLDB", this.getCluster().getLocalNode().getDataSource(), null, "PUBLIC" ) ) )
-                .traitDefs( ConventionTraitDef.INSTANCE, RelCollationTraitDef.INSTANCE )
-                .context( Contexts.EMPTY_CONTEXT )
-                .ruleSets( RuleSets.ofList() )
-                .costFactory( null )
-                .typeSystem( RelDataTypeSystem.DEFAULT )
-                .build() );
+        return this.planner = this.catalog.getPlanner();
     }
 }

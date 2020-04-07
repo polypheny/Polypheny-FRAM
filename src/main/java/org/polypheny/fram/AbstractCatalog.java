@@ -17,13 +17,10 @@
 package org.polypheny.fram;
 
 
-import java.util.UUID;
-
-
 /**
  *
  */
-public abstract class AbstractCatalog {
+public abstract class AbstractCatalog implements Catalog {
 
-    public abstract UUID getNodeId();
+
 }

@@ -86,6 +86,17 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
 
 
     @Override
+    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        LOGGER.trace( "{}: prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
+
+        final RemoteExecuteResult result = this.callRemoteMethod( Method.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame ) );
+
+        LOGGER.trace( "{}: prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
     public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
         LOGGER.trace( "{}: prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sqlCommands );
 

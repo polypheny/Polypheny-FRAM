@@ -17,6 +17,7 @@
 package org.polypheny.fram.protocols;
 
 
+import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.List;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
@@ -24,9 +25,11 @@ import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
+import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchStatementException;
+import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
@@ -62,7 +65,7 @@ public interface Protocol {
 
     ExecuteBatchResult executeBatch( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
 
-    Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException;
+    Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException;
 
     void commit( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
 
@@ -71,6 +74,10 @@ public interface Protocol {
     void closeStatement( final ConnectionInfos connection, final StatementInfos statement ) throws RemoteException;
 
     void closeConnection( final ConnectionInfos connection ) throws RemoteException;
+
+    Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException;
+
+    boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException;
 
 
     interface FragmentationProtocol extends Protocol {

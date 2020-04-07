@@ -17,6 +17,7 @@
 package org.polypheny.fram.protocols;
 
 
+import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.EnumSet;
 import java.util.List;
@@ -25,9 +26,11 @@ import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
+import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchStatementException;
+import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlKind;
@@ -36,6 +39,7 @@ import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.LocalNode;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.slf4j.Logger;
@@ -79,7 +83,7 @@ public class Passthrough extends AbstractProtocol implements Protocol {
             serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
         }
 
-        return connection.getCluster().getLocalNode().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, maxRowsInFirstFrame )
+        return connection.getCluster().getLocalNode().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, serializedSql, maxRowCount, maxRowsInFirstFrame )
                 .toExecuteResult();
     }
 
@@ -153,8 +157,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
-        return null;
+    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
+        return LocalNode.getInstance().fetch( RemoteStatementHandle.fromStatementHandle( statementHandle ), offset, fetchMaxRowCount ).toFrame();
     }
 
 
@@ -179,5 +183,17 @@ public class Passthrough extends AbstractProtocol implements Protocol {
     @Override
     public void closeConnection( ConnectionInfos connection ) throws RemoteException {
         connection.getCluster().getLocalNode().closeConnection( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
+    }
+
+
+    @Override
+    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
+        throw new UnsupportedOperationException();
+    }
+
+
+    @Override
+    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
+        throw new UnsupportedOperationException();
     }
 }

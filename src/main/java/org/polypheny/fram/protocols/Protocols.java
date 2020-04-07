@@ -17,6 +17,7 @@
 package org.polypheny.fram.protocols;
 
 
+import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.List;
 import java.util.Objects;
@@ -25,9 +26,11 @@ import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
+import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchStatementException;
+import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
@@ -144,7 +147,7 @@ public enum Protocols implements Protocol {
 
 
     @Override
-    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
+    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
         return delegate.fetch( statementHandle, offset, fetchMaxRowCount );
     }
 
@@ -170,5 +173,17 @@ public enum Protocols implements Protocol {
     @Override
     public void closeConnection( ConnectionInfos connection ) throws RemoteException {
         delegate.closeConnection( connection );
+    }
+
+
+    @Override
+    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
+        return delegate.createIterable( connection, transaction, statement, state, signature, parameterValues, firstFrame );
+    }
+
+
+    @Override
+    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
+        return delegate.syncResults( connection, transaction, statement, state, offset );
     }
 }
