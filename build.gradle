@@ -621,7 +621,7 @@ task zipAll(group: 'distribution') {
 
 publishing {
     publications {
-        maven(MavenPublication) {
+        "${project.name}"(MavenPublication) {
             from components.java
             artifact jar
             artifact source: sourcesJar, classifier: 'sources', extension: 'jar'
@@ -641,7 +641,7 @@ publishing {
         }
     }
 }
-task generatePom(group: 'publishing', dependsOn: 'generatePomFileForMavenPublication')
+task generatePom(group: 'publishing', dependsOn: "generatePomFileFor${project.name.capitalize()}Publication")
 
 
 sonarqube {
