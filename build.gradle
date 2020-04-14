@@ -166,7 +166,7 @@ dependencies {
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.10'
     implementation group: 'commons-codec', name: 'commons-codec', version: '1.14'
     // Google GUAVA (Apache 2.0)
-    implementation group: 'com.google.guava', name: 'guava', version: '28.2-jre'
+    implementation group: 'com.google.guava', name: 'guava', version: '29.0-jre'
     // Byte Units (Apache 2.0)
     implementation group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
     // Cluster Management, JGroups (Apache 2.0)
@@ -183,7 +183,7 @@ dependencies {
     //
     // ///// //// /// // /
     // TESTING (Eclipse Public License 2.0)
-    testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.1'
+    testImplementation group: 'org.junit.jupiter', name: 'junit-jupiter', version: '5.6.2'
     testImplementation group: 'org.hamcrest', name: 'hamcrest-library', version: '2.2'
     // Apache Calcite (Apache 2.0)
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
