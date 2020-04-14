@@ -896,7 +896,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             final Frame result = fetchDurationTimer.recordCallable(
                     () -> {
                         if ( resultSet == null ) {
-                            return protocol.fetch( statementHandle, offset, fetchMaxRowCount );
+                            return protocol.fetch( connection, statementHandle, offset, fetchMaxRowCount );
                         } else {
                             return resultSet.fetch( connection, statement, offset, fetchMaxRowCount );
                         }

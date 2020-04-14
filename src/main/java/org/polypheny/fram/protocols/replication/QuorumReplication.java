@@ -27,11 +27,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
+import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
@@ -42,6 +44,7 @@ import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.ReplicationProtocol;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
@@ -49,6 +52,7 @@ import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
 
@@ -84,10 +88,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public ExecuteResult prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection.getCluster() );
 
-        connection.addAccessedNodes( quorum );
-        transaction.addAccessedNodes( quorum );
-        statement.withExecutionTargets( quorum );
-
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepareAndExecute[DataManipulation] on {}", quorum );
         }
@@ -99,7 +99,14 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            } );
         } );
 
         final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
@@ -112,10 +119,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public ExecuteResult prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection.getCluster() );
 
-        connection.addAccessedNodes( quorum );
-        transaction.addAccessedNodes( quorum );
-        statement.withExecutionTargets( quorum );
-
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepareAndExecute[DataQuery] on {}", quorum );
         }
@@ -127,7 +130,14 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            } );
         } );
 
         final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
@@ -140,9 +150,6 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection.getCluster() );
 
-        connection.addAccessedNodes( quorum );
-        statement.withExecutionTargets( quorum );
-
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepare[DataManipulation] on {}", quorum );
         }
@@ -154,19 +161,20 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteStatements.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteStatements.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
         } );
-        return connection.createPreparedStatement( statement, remoteStatements, quorum );
-        //result.getStatementHandle().signature = ... TODO (remove the assignment in StatementInfos?)
+
+        return connection.createPreparedStatement( statement, remoteStatements );
     }
 
 
     @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection.getCluster() );
-
-        connection.addAccessedNodes( quorum );
-        statement.withExecutionTargets( quorum );
 
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepare[DataQuery] on {}", quorum );
@@ -179,24 +187,29 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteStatements.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteStatements.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
         } );
 
-        return connection.createPreparedStatement( statement, remoteStatements, quorum );
+        return connection.createPreparedStatement( statement, remoteStatements );
     }
 
 
     @Override
     public ExecuteResult execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
+        if ( !(statement instanceof PreparedStatementInfos) ) {
+            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
+        }
+
         // Execute the statement on the nodes it was prepared
-        final Collection<AbstractRemoteNode> quorum = statement.getExecutionTargets();
+        final Collection<AbstractRemoteNode> quorum = ((PreparedStatementInfos) statement).getExecutionTargets();
 
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "execute on {}", quorum );
         }
-
-        connection.addAccessedNodes( quorum );
-        transaction.addAccessedNodes( quorum );
 
         final RspList<RemoteExecuteResult> responseList = cluster.execute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, maxRowsInFirstFrame, quorum );
         final List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
@@ -205,7 +218,14 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            } );
         } );
 
         final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
@@ -216,24 +236,29 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ExecuteBatchResult executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+        if ( !(statement instanceof PreparedStatementInfos) ) {
+            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
+        }
+
         // Execute the statement on the nodes it was prepared
-        final Collection<AbstractRemoteNode> quorum = statement.getExecutionTargets();
+        final Collection<AbstractRemoteNode> quorum = ((PreparedStatementInfos) statement).getExecutionTargets();
 
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "executeBatch on {}", quorum );
         }
 
-        connection.addAccessedNodes( quorum );
-        transaction.addAccessedNodes( quorum );
-
         final RspList<RemoteExecuteBatchResult> responseList = cluster.executeBatch( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, quorum );
         final List<Entry<AbstractRemoteNode, RemoteExecuteBatchResult>> remoteResults = new LinkedList<>();
 
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+        responseList.forEach( ( address, remoteExecuteBatchResultRsp ) -> {
+            if ( remoteExecuteBatchResultRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteExecuteBatchResultRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteExecuteBatchResultRsp.getValue() ) );
+
+            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
         } );
 
         final ResultSetInfos resultSetInfos = statement.createBatchResultSet( remoteResults );

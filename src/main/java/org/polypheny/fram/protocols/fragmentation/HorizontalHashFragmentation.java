@@ -26,6 +26,7 @@ import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
+import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.NoSuchStatementException;
@@ -33,7 +34,9 @@ import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlBasicCall;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -90,7 +93,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         LOGGER.trace( "prepareAndExecuteDataManipulationInsert( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         final SqlInsert insertSql = (SqlInsert) sql;
-        final SqlNode targetTable = insertSql.getTargetTable();
+        final SqlIdentifier targetTable = (SqlIdentifier) insertSql.getTargetTable();
         final SqlNodeList targetTableColumnList = insertSql.getTargetColumnList();
         final SqlBasicCall source = (SqlBasicCall) insertSql.getSource();
 
@@ -108,6 +111,8 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             default:
                 throw new UnsupportedOperationException( "source.getKind() = " + source.getKind() + " - Not supported yet." );
         }
+
+        MetaResultSet mrs = connection.getCatalog().getPrimaryKeys( connection, null, null, targetTable.toString() );
 
         final RspList<RemoteExecuteResult> responseList = cluster.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
 
@@ -132,8 +137,91 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) {
-        return null;
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        LOGGER.trace( "prepareDataManipulation( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
+
+        switch ( sql.getKind() ) {
+            case INSERT:
+                return prepareDataManipulationInsert( connection, statement, sql, maxRowCount );
+        }
+
+        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+
+        final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteResults = new LinkedList<>();
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+        } );
+
+        return connection.createPreparedStatement( statement, remoteResults );
+    }
+
+
+    protected StatementInfos prepareDataManipulationInsert( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        LOGGER.trace( "prepareDataManipulationInsert( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
+
+        final SqlInsert insertSql = (SqlInsert) sql;
+        final SqlIdentifier targetTable = (SqlIdentifier) insertSql.getTargetTable();
+        final SqlNodeList targetTableColumnList = insertSql.getTargetColumnList();
+        final SqlBasicCall source = (SqlBasicCall) insertSql.getSource();
+
+        switch ( source.getKind() ) {
+            case VALUES:
+                final List<SqlNode> rows = source.getOperandList();
+                for ( SqlNode row : rows ) {
+                    final List<SqlNode> columns = ((SqlBasicCall) row).getOperandList();
+                    for ( SqlNode column : columns ) {
+                        if ( column.getKind() == SqlKind.DYNAMIC_PARAM ) {
+                            LOGGER.error( "Found column of type: " + column.getKind() + "" );
+                        } else {
+                            LOGGER.error( "Found column value of type: " + column.getKind() + " with value: " + ((SqlLiteral) column).toValue() );
+                        }
+                    }
+                }
+                break;
+
+            default:
+                throw new UnsupportedOperationException( "source.getKind() = " + source.getKind() + " - Not supported yet." );
+        }
+
+        final String catalog;
+        final String schema;
+        final String table;
+        switch ( targetTable.names.size() ) {
+            case 3:
+                catalog = targetTable.names.get( 0 );
+                schema = targetTable.names.get( 1 );
+                table = targetTable.names.get( 2 );
+                break;
+            case 2:
+                catalog = null;
+                schema = targetTable.names.get( 0 );
+                table = targetTable.names.get( 1 );
+                break;
+            case 1:
+                catalog = null;
+                schema = null;
+                table = targetTable.names.get( 0 );
+                break;
+            default:
+                throw new RuntimeException( "Something went terrible wrong here..." );
+        }
+
+        MetaResultSet mrs = connection.getCatalog().getPrimaryKeys( connection, catalog, schema, table );
+
+        final RspList<RemoteStatementHandle> responseList = cluster.prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+
+        final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteResults = new LinkedList<>();
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            remoteResults.add( new SimpleImmutableEntry<>( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+        } );
+
+        return connection.createPreparedStatement( statement, remoteResults );
     }
 
 

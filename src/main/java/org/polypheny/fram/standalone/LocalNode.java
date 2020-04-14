@@ -59,7 +59,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * This class uses {@link JdbcXAMeta} to access the underlying Database.
  */
-public class LocalNode extends AbstractLocalNode {
+class LocalNode extends AbstractLocalNode {
 
     private static final Logger LOGGER = LoggerFactory.getLogger( LocalNode.class );
 

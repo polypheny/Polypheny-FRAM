@@ -17,6 +17,7 @@
 package org.polypheny.fram.standalone;
 
 
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -29,6 +30,7 @@ import java.util.Set;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
@@ -39,12 +41,11 @@ import org.polypheny.fram.remote.types.RemoteStatementHandle;
  */
 public class StatementInfos {
 
-    private final ConnectionInfos connection;
-    private final StatementHandle statementHandle;
-    private final Map<AbstractRemoteNode, RemoteStatementHandle> origins = new LinkedHashMap<>();
-    private ResultSetInfos resultSetInfos;
-    private List<AbstractRemoteNode> executionTargets;
-    private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
+    protected final ConnectionInfos connection;
+    protected final StatementHandle statementHandle;
+    protected final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements = new LinkedHashMap<>();
+    protected final Map<RemoteStatementHandle, Set<AbstractRemoteNode>> remoteNodes = new LinkedHashMap<>();
+    protected ResultSetInfos resultSetInfos;
 
 
     StatementInfos( final ConnectionInfos connection, final StatementHandle statementHandle ) {
@@ -64,7 +65,7 @@ public class StatementInfos {
 
 
     public RemoteStatementHandle getRemoteStatementHandle( final AbstractRemoteNode node ) {
-        return this.origins.get( node );
+        return this.remoteStatements.get( node );
     }
 
 
@@ -89,40 +90,70 @@ public class StatementInfos {
     }
 
 
-    public StatementInfos withExecutionTargets( Collection<AbstractRemoteNode> remoteNodes ) {
-        this.executionTargets = new LinkedList<>( remoteNodes );
-        this.addAccessedNodes( remoteNodes );
-        return this;
+    public void addAccessedNode( final AbstractRemoteNode node, RemoteStatementHandle remoteConnection ) {
+        this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( node, remoteConnection ) ) );
     }
 
 
-    public Collection<AbstractRemoteNode> getExecutionTargets() {
-        return new LinkedList<>( this.executionTargets );
+    public void addAccessedNode( final Entry<AbstractRemoteNode, RemoteStatementHandle> node ) {
+        this.addAccessedNodes( Collections.singleton( node ) );
     }
 
 
-    public void addAccessedNodes( Collection<AbstractRemoteNode> nodes ) {
-        this.accessedNodes.addAll( nodes );
-        connection.addAccessedNodes( nodes );
+    public void addAccessedNodes( final Collection<Entry<AbstractRemoteNode, RemoteStatementHandle>> nodes ) {
+        nodes.forEach( node -> {
+            this.remoteStatements.put( node.getKey(), node.getValue() );
+            this.remoteNodes.compute( node.getValue(), ( handle, set ) -> {
+                if ( set == null ) {
+                    set = new HashSet<>();
+                }
+                set.add( node.getKey() );
+                return set;
+            } );
+        } );
     }
 
 
     public Collection<AbstractRemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( accessedNodes );
+        return Collections.unmodifiableCollection( this.remoteStatements.keySet() );
     }
 
 
-    public StatementInfos toPreparedStatement( final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements, final Collection<AbstractRemoteNode> quorum ) {
-        remoteStatements.forEach( entry -> StatementInfos.this.origins.put( entry.getKey(), entry.getValue() ) );
-        // BEGIN HACK
-        this.statementHandle.signature = remoteStatements.size() == 0 ? null : remoteStatements.get( 0 ).getValue().toStatementHandle().signature;
-        // END HACK
-        return this.withExecutionTargets( quorum );
-    }
+    public class PreparedStatementInfos extends StatementInfos {
+
+        PreparedStatementInfos( final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
+            this( new SimpleImmutableEntry<>( remoteNode, remoteStatement ) );
+        }
 
 
-    public StatementInfos toPreparedStatement( StatementHandle remoteStatement ) {
-        this.statementHandle.signature = remoteStatement.signature;
-        return this;
+        PreparedStatementInfos( final Entry<AbstractRemoteNode, RemoteStatementHandle> remoteStatement ) {
+            this( Collections.singletonList( remoteStatement ) );
+        }
+
+
+        PreparedStatementInfos( final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements ) {
+            super( StatementInfos.this.connection, StatementInfos.this.statementHandle );
+
+            remoteStatements.forEach( entry -> {
+                this.remoteStatements.put( entry.getKey(), entry.getValue() );
+                this.remoteNodes.compute( entry.getValue(), ( sh, set ) -> {
+                    if ( set == null ) {
+                        set = new HashSet<>();
+                    }
+                    set.add( entry.getKey() );
+                    return set;
+                } );
+                this.connection.addAccessedNode( entry.getKey(), RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( entry.getValue().toStatementHandle().connectionId ) ) );
+            } );
+
+            // BEGIN HACK
+            this.statementHandle.signature = remoteStatements.isEmpty() ? null : remoteStatements.get( 0 ).getValue().toStatementHandle().signature;
+            // END HACK
+        }
+
+
+        public Collection<AbstractRemoteNode> getExecutionTargets() {
+            return new LinkedList<>( this.remoteStatements.keySet() );
+        }
     }
 }

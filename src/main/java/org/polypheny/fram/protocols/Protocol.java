@@ -65,7 +65,7 @@ public interface Protocol {
 
     ExecuteBatchResult executeBatch( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
 
-    Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException;
+    Frame fetch( final ConnectionInfos connection, final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException;
 
     void commit( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException;
 

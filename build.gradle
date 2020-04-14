@@ -112,6 +112,11 @@ configurations {
 
     testCompileClasspath.extendsFrom testCompileOnly, testImplementation, standaloneImplementation, pdbModuleImplementation
     testRuntimeClasspath.extendsFrom testRuntimeOnly, testRuntime, testImplementation, standaloneImplementation
+
+    all {
+        // Check for updates every build
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    }
 }
 
 
@@ -136,8 +141,8 @@ dependencies {
     // ///// //// /// // /
     // STANDALONE DDBMS
     // Apache Calcite Avatica (Apache 2.0)
-    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion
-    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion
+    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-core', version: avaticaVersion, changing: true
+    standaloneImplementation group: 'org.apache.calcite.avatica', name: 'avatica-server', version: avaticaVersion, changing: true
     // Apache Calcite (Apache 2.0)
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
@@ -184,7 +189,7 @@ dependencies {
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
     //
-    testImplementation group: 'org.polypheny', name: 'polypheny-jdbc-driver', version: '1.4-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
+    testImplementation group: 'org.polypheny', name: 'polypheny-jdbc-driver', version: '1.4-SNAPSHOT', changing: true /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 
     //
     // ///// //// /// // /

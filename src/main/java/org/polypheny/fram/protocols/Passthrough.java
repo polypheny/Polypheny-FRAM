@@ -39,7 +39,6 @@ import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
-import org.polypheny.fram.standalone.LocalNode;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.slf4j.Logger;
@@ -128,8 +127,7 @@ public class Passthrough extends AbstractProtocol implements Protocol {
     public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
-        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount )
-                .toStatementHandle() );
+        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount ) );
     }
 
 
@@ -137,8 +135,7 @@ public class Passthrough extends AbstractProtocol implements Protocol {
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
-        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount )
-                .toStatementHandle() );
+        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount ) );
     }
 
 
@@ -157,8 +154,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        return LocalNode.getInstance().fetch( RemoteStatementHandle.fromStatementHandle( statementHandle ), offset, fetchMaxRowCount ).toFrame();
+    public Frame fetch( final ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
+        return connection.getCluster().getLocalNode().fetch( RemoteStatementHandle.fromStatementHandle( statementHandle ), offset, fetchMaxRowCount ).toFrame();
     }
 
 

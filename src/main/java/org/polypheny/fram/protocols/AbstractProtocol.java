@@ -24,6 +24,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
@@ -87,10 +88,6 @@ public abstract class AbstractProtocol implements Protocol {
     public ExecuteResult prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getAllNodes( connection.getCluster() );
 
-        connection.addAccessedNodes( quorum );
-        transaction.addAccessedNodes( quorum );
-        statement.withExecutionTargets( quorum );
-
         if ( LOGGER.isTraceEnabled() ) {
             LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
         }
@@ -98,11 +95,19 @@ public abstract class AbstractProtocol implements Protocol {
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
         final List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
+
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+
+            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            } );
         } );
 
         final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
@@ -176,8 +181,8 @@ public abstract class AbstractProtocol implements Protocol {
 
 
     @Override
-    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        return null;
+    public Frame fetch( final ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet" );
     }
 
 

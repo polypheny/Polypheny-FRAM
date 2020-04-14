@@ -91,14 +91,18 @@ public class TransactionInfos {
     }
 
 
-    public Collection<AbstractRemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( accessedNodes );
+    void addAccessedNode( final AbstractRemoteNode node ) {
+        this.addAccessedNodes( Collections.singleton( node ) );
     }
 
 
-    public void addAccessedNodes( Collection<AbstractRemoteNode> nodes ) {
-        accessedNodes.addAll( nodes );
-        connection.addAccessedNodes( nodes );
+    void addAccessedNodes( final Collection<AbstractRemoteNode> nodes ) {
+        this.accessedNodes.addAll( nodes );
+    }
+
+
+    public Collection<AbstractRemoteNode> getAccessedNodes() {
+        return Collections.unmodifiableCollection( this.accessedNodes );
     }
 
 

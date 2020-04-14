@@ -147,8 +147,8 @@ public enum Protocols implements Protocol {
 
 
     @Override
-    public Frame fetch( StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        return delegate.fetch( statementHandle, offset, fetchMaxRowCount );
+    public Frame fetch( final ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
+        return delegate.fetch( connection, statementHandle, offset, fetchMaxRowCount );
     }
 
 
