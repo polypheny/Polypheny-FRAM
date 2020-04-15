@@ -113,7 +113,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                     .forEach( ( databaseProperty, serializable ) -> databaseProperties.put( DatabaseProperty.fromProto( databaseProperty ), serializable ) );
             return databaseProperties;
         } catch ( RemoteException e ) {
-            throw Utils.extractAndThrow( e );
+            throw Utils.wrapException( e );
         }
     }
 
@@ -355,9 +355,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
 
         } catch ( RemoteException ex ) {
             LOGGER.warn( "Exception occured", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -376,9 +376,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             return result;
         } catch ( RemoteException ex ) {
             LOGGER.warn( "Exception occured", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -396,11 +396,11 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             return result;
         } catch ( IllegalArgumentException ex ) {
             LOGGER.debug( "Wrong planner state. ", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( SqlParseException ex ) {
             throw ex;
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -418,11 +418,11 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             return result;
         } catch ( IllegalArgumentException ex ) {
             LOGGER.debug( "Wrong planner state. ", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( ValidationException ex ) {
             throw ex;
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -445,13 +445,13 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             sqlTreeParsed = parseSql( planner, sql );
         } catch ( SqlParseException ex ) {
             LOGGER.debug( "Exception while parsing sql: " + sql, ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
 
         if ( !sqlTreeParsed.isA( SqlKind.TOP_LEVEL ) ) {
             // SqlKind.TOP_LEVEL = QUERY, DML, DDL
             LOGGER.debug( "Unsupported Operation: `" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." );
-            throw Utils.extractAndThrow( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
+            throw Utils.wrapException( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
         }
 
         if ( sqlTreeParsed.isA( SqlKind.DDL ) ) {
@@ -459,7 +459,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
              * Branching off DataDefinition
              */
             LOGGER.debug( "Unsupported Operation: DDL is not supported yet." );
-            throw Utils.extractAndThrow( new UnsupportedOperationException( "Not supported yet." ) );
+            throw Utils.wrapException( new UnsupportedOperationException( "Not supported yet." ) );
         }
 
         /*
@@ -471,7 +471,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             sqlTreeValidated = validateSql( planner, sqlTreeParsed );
         } catch ( ValidationException ex ) {
             LOGGER.debug( "Exception while validating the statement.", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
         final SqlNode sqlTreeGenerated = sqlTreeValidated;
 
@@ -490,13 +490,13 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             /*
              * We should not be here. Can only be the case if the API of Apache Calcite Avatica has changed.
              */
-            throw Utils.extractAndThrow( new UnsupportedOperationException( "Not supported yet." ) );
+            throw Utils.wrapException( new UnsupportedOperationException( "Not supported yet." ) );
         }
 
         synchronized ( openStatements ) {
             if ( openStatements.putIfAbsent( statement.getStatementHandle().toString(), statement ) != null ) {
                 LOGGER.warn( "Statement already exists." );
-                throw Utils.extractAndThrow( new RuntimeException( "Statement already exists." ) );
+                throw Utils.wrapException( new RuntimeException( "Statement already exists." ) );
             }
         }
 
@@ -517,9 +517,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             return result;
         } catch ( RemoteException ex ) {
             LOGGER.warn( "Exception occured", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -535,9 +535,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             LOGGER.trace( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} ) = {}", connection, sql, maxRowCount, result );
             return result;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -569,13 +569,13 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             sqlTreeParsed = parseSql( planner, sql );
         } catch ( SqlParseException ex ) {
             LOGGER.debug( "Exception while parsing sql: " + sql, ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
 
         if ( !sqlTreeParsed.isA( SqlKind.TOP_LEVEL ) ) {
             // SqlKind.TOP_LEVEL = QUERY, DML, DDL
             LOGGER.debug( "Unsupported Operation: `{}´ is not TOP_LEVEL.", sqlTreeParsed.getKind() );
-            throw Utils.extractAndThrow( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
+            throw Utils.wrapException( new UnsupportedOperationException( "`" + sqlTreeParsed.getKind() + "´ is not TOP_LEVEL." ) );
         }
 
         if ( sqlTreeParsed.isA( SqlKind.DDL ) ) {
@@ -593,7 +593,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             sqlTreeValidated = validateSql( planner, sqlTreeParsed );
         } catch ( ValidationException ex ) {
             LOGGER.debug( "Exception while validating the statement.", ex );
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
         final SqlNode sqlTreeGenerated = sqlTreeValidated;
 
@@ -658,9 +658,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -759,9 +759,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -777,9 +777,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
             return result;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -832,9 +832,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         } catch ( NoSuchStatementException ex ) {
             throw ex;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -867,18 +867,18 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         final StatementInfos statement = getStatement( statementHandle );
 
         try {
-            final ExecuteBatchResult result = executionDurationTimer.recordCallable(
+            final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
                     () -> protocol.executeBatch( connection, transaction, statement, parameterValues )
             );
 
-            LOGGER.trace( "prepareAndExecute( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, result );
-            return result;
+            LOGGER.trace( "prepareAndExecute( statementHandle: {}, parameterValues: {} ) = {}", statementHandle, parameterValues, resultSet );
+            return resultSet.getExecuteResult();
         } catch ( NoSuchStatementException ex ) {
             throw ex;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -908,9 +908,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         } catch ( NoSuchStatementException ex ) {
             throw ex;
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -987,9 +987,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                 return true;
             } );
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -1102,9 +1102,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                 return true;
             } );
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -1138,9 +1138,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                 connection.endTransaction();
             }
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
     }
 
@@ -1174,9 +1174,9 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                 connection.endTransaction();
             }
         } catch ( RemoteException ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
-            throw Utils.extractAndThrow( ex );
+            throw Utils.wrapException( ex );
         }
 
         LOGGER.warn( "commit( rollback: {}, transaction: {} ) SUCCESS", connection, transaction );
@@ -1191,7 +1191,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         synchronized ( openConnections ) {
             result = openConnections.compute( connectionHandle.toString(), ( __, connectionInfos ) -> {
                 if ( connectionInfos == null ) {
-                    throw Utils.extractAndThrow( new RuntimeException( "Connection does not exist." ) );
+                    throw Utils.wrapException( new RuntimeException( "Connection does not exist." ) );
                 }
                 final ConnectionInfos connection = connectionInfos.merge( newConnectionProperties );
                 if ( connection.isDirty() ) {

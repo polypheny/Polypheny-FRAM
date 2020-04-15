@@ -22,7 +22,6 @@ import java.rmi.RemoteException;
 import java.util.EnumSet;
 import java.util.List;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -39,6 +38,8 @@ import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.ResultSetInfos;
+import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.slf4j.Logger;
@@ -147,9 +148,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public ExecuteBatchResult executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return connection.getCluster().getLocalNode().executeBatch( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues )
-                .toExecuteBatchResult();
+    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+        return new BatchResultSetInfos( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().executeBatch( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues ) );
     }
 
 

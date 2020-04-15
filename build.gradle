@@ -178,6 +178,8 @@ dependencies {
     implementation group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.4.1'
     // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
     implementation group: 'com.typesafe', name: 'config', version: '1.4.0'
+    // jOOλ - The Missing Parts in Java 8 (Apache 2.0)
+    implementation group: 'org.jooq', name: 'jool-java-8', version: '0.9.14'
 
 
     //

@@ -21,7 +21,6 @@ import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.List;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -34,6 +33,7 @@ import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
@@ -63,7 +63,7 @@ public interface Protocol {
 
     ExecuteResult execute( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException;
 
-    ExecuteBatchResult executeBatch( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
+    ResultSetInfos executeBatch( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException;
 
     Frame fetch( final ConnectionInfos connection, final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException;
 

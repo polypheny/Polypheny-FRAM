@@ -18,11 +18,9 @@ package org.polypheny.fram.protocols;
 
 
 import java.rmi.RemoteException;
-import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map.Entry;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
@@ -46,6 +44,7 @@ import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
+import org.polypheny.fram.standalone.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,7 +93,7 @@ public abstract class AbstractProtocol implements Protocol {
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
-        final List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
 
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
@@ -102,7 +101,7 @@ public abstract class AbstractProtocol implements Protocol {
             }
             final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
 
-            remoteResults.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
 
             remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
                 connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
@@ -110,7 +109,13 @@ public abstract class AbstractProtocol implements Protocol {
             } );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
+        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            try {
+                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+            } catch ( RemoteException e ) {
+                throw Utils.wrapException( e );
+            }
+        } );
 
         return resultSetInfos.getExecuteResult();
     }
@@ -126,15 +131,21 @@ public abstract class AbstractProtocol implements Protocol {
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
-        final List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
+        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            try {
+                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+            } catch ( RemoteException e ) {
+                throw Utils.wrapException( e );
+            }
+        } );
 
         return resultSetInfos.getExecuteResult();
     }
@@ -150,15 +161,21 @@ public abstract class AbstractProtocol implements Protocol {
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
-        final List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults = new LinkedList<>();
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
                 throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
             }
-            remoteResults.add( new SimpleImmutableEntry<>( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() ) );
+            remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults );
+        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            try {
+                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+            } catch ( RemoteException e ) {
+                throw Utils.wrapException( e );
+            }
+        } );
 
         return resultSetInfos.getExecuteResult();
     }

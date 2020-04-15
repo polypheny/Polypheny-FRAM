@@ -22,7 +22,6 @@ import java.rmi.RemoteException;
 import java.util.List;
 import java.util.Objects;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -37,6 +36,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.protocols.fragmentation.HorizontalHashFragmentation;
 import org.polypheny.fram.protocols.replication.QuorumReplication;
 import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
@@ -141,7 +141,7 @@ public enum Protocols implements Protocol {
 
 
     @Override
-    public ExecuteBatchResult executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
         return delegate.executeBatch( connection, transaction, statement, parameterValues );
     }
 

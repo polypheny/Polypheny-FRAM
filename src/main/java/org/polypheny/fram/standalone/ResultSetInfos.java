@@ -23,15 +23,16 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
+import org.jooq.lambda.function.Function1;
+import org.jooq.lambda.function.Function5;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.RemoteMeta;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
 public abstract class ResultSetInfos {
@@ -55,25 +56,18 @@ public abstract class ResultSetInfos {
     }
 
 
-    public static class SingleResult extends ResultSetInfos {
+    public static class QueryResultSet extends ResultSetInfos {
 
         private final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
         private final ExecuteResult executeResult;
+        private final Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
 
-        private final AbstractRemoteNode THIS_IS_A_HACK__PLEASE_REPLACE_ME;
 
-
-        public SingleResult( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults ) {
+        public QueryResultSet( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
             super( statement );
-            if ( remoteResults == null || remoteResults.size() < 1 ) {
-                throw new IllegalArgumentException( "The size of remoteResults must be at least 1" );
-            }
-
-            remoteResults.forEach( entry -> SingleResult.this.origins.put( entry.getKey(), entry.getValue() ) );
-
-            //this.executeResult = new ExecuteResult( Collections.singletonList(  ) );
-            this.executeResult = remoteResults.get( 0 ) == null ? null : remoteResults.get( 0 ).getValue().toExecuteResult();
-            this.THIS_IS_A_HACK__PLEASE_REPLACE_ME = remoteResults.get( 0 ) == null ? null : remoteResults.get( 0 ).getKey();
+            this.origins.putAll( remoteResults );
+            this.executeResult = resultsMergeFunction.apply( this.origins );
+            this.resultsFetchFunction = resultsFetchFunction;
         }
 
 
@@ -91,28 +85,36 @@ public abstract class ResultSetInfos {
 
         @Override
         public Frame fetch( ConnectionInfos connection, StatementInfos statement, long offset, int fetchMaxRowCount ) throws RemoteException {
-            return THIS_IS_A_HACK__PLEASE_REPLACE_ME.fetch( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+            try {
+                return resultsFetchFunction.apply( origins, connection, statement, offset, fetchMaxRowCount );
+            } catch ( WrappingException wrapper ) {
+                Throwable ex = Utils.xtractException( wrapper );
+                if ( ex instanceof RemoteException ) {
+                    throw (RemoteException) ex;
+                }
+                throw Utils.wrapException( ex );
+            }
         }
     }
 
 
-    public static class BatchResult extends ResultSetInfos {
+    public static class BatchResultSetInfos extends ResultSetInfos {
 
         private final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
         private final ExecuteBatchResult executeBatchResult;
 
 
-        public BatchResult( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
+        public BatchResultSetInfos( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteBatchResult remoteBatchResult ) {
             super( statement );
+            this.origins.put( origin, remoteBatchResult );
+            this.executeBatchResult = remoteBatchResult.toExecuteBatchResult();
+        }
 
-            if ( remoteBatchResults == null || remoteBatchResults.size() < 1 ) {
-                throw new IllegalArgumentException( "The size of remoteBatchResults must be at least 1" );
-            }
 
-            remoteBatchResults.forEach( entry -> BatchResult.this.origins.put( entry.getKey(), entry.getValue() ) );
-
-            //this.executeResult = new ExecuteBatchResult(  );
-            this.executeBatchResult = remoteBatchResults.get( 0 ).getValue().toExecuteBatchResult();
+        public BatchResultSetInfos( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> batchResultsMergeFunction ) {
+            super( statement );
+            this.origins.putAll( remoteBatchResults );
+            this.executeBatchResult = batchResultsMergeFunction.apply( this.origins );
         }
 
 

@@ -18,7 +18,9 @@ package org.polypheny.fram.standalone;
 
 
 import java.io.IOException;
-import java.rmi.RemoteException;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.calcite.rel.RelNode;
@@ -86,18 +88,121 @@ public class Utils {
     }
 
 
-    public static RuntimeException extractAndThrow( final Throwable t ) throws RuntimeException, Error {
-        if ( t instanceof RemoteException == false ) {
-            return new RuntimeException( t.getMessage(), t.getCause() );
-        }
-
-        final Throwable cause = t.getCause() == null ? t : t.getCause();
+    public static Throwable xtractException( final WrappingException ex ) {
+        final Throwable cause = ex.getDelegate();
         if ( cause instanceof RuntimeException ) {
-            throw (RuntimeException) cause;
+            return (RuntimeException) cause;
+        }
+        if ( cause instanceof Exception ) {
+            return (Exception) cause;
         }
         if ( cause instanceof Error ) {
-            throw (Error) cause;
+            return (Error) cause;
         }
-        throw new RuntimeException( cause.getMessage(), cause );
+        return cause;
+    }
+
+
+    public static WrappingException wrapException( final Throwable t ) {
+        if ( t instanceof WrappingException ) {
+            return (WrappingException) t;
+        }
+        return new WrappingException( t );
+    }
+
+
+    public static class WrappingException extends RuntimeException {
+
+        private static final long serialVersionUID = 2020_04_15__11_45L;
+        public final Throwable delegate;
+
+
+        public WrappingException( Throwable cause ) {
+            Objects.requireNonNull( cause );
+            this.delegate = cause;
+        }
+
+
+        public Throwable getDelegate() {
+            return delegate;
+        }
+
+
+        @Override
+        public synchronized Throwable getCause() {
+            return this.delegate.getCause();
+        }
+
+
+        @Override
+        public synchronized Throwable initCause( Throwable cause ) {
+            return this.delegate.initCause( cause );
+        }
+
+
+        @Override
+        public boolean equals( Object o ) {
+            return this.delegate.equals( o );
+        }
+
+
+        @Override
+        public int hashCode() {
+            return this.delegate.hashCode();
+        }
+
+
+        @Override
+        public StackTraceElement[] getStackTrace() {
+            return this.delegate.getStackTrace();
+        }
+
+
+        @Override
+        public synchronized Throwable fillInStackTrace() {
+            return this.delegate.fillInStackTrace();
+        }
+
+
+        @Override
+        public void printStackTrace() {
+            this.delegate.printStackTrace();
+        }
+
+
+        @Override
+        public void printStackTrace( PrintStream s ) {
+            this.delegate.printStackTrace( s );
+        }
+
+
+        @Override
+        public void printStackTrace( PrintWriter s ) {
+            this.delegate.printStackTrace( s );
+        }
+
+
+        @Override
+        public void setStackTrace( StackTraceElement[] stackTrace ) {
+            this.delegate.setStackTrace( stackTrace );
+        }
+
+
+        @Override
+        public String getLocalizedMessage() {
+            return this.delegate.getLocalizedMessage();
+        }
+
+
+        @Override
+        public String getMessage() {
+            return this.delegate.getMessage();
+        }
+
+
+        @Override
+        public String toString() {
+            return this.delegate.toString();
+        }
     }
 }

@@ -40,6 +40,7 @@ import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,17 +144,17 @@ public class ConnectionInfos {
     }
 
 
-    public StatementInfos createPreparedStatement( StatementInfos statement, AbstractRemoteNode remoteNode, RemoteStatementHandle remoteStatement ) {
+    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, AbstractRemoteNode remoteNode, RemoteStatementHandle remoteStatement ) {
         return statement.new PreparedStatementInfos( remoteNode, remoteStatement );
     }
 
 
-    public StatementInfos createPreparedStatement( StatementInfos statement, Entry<AbstractRemoteNode, RemoteStatementHandle> remoteStatement ) {
+    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, Entry<AbstractRemoteNode, RemoteStatementHandle> remoteStatement ) {
         return statement.new PreparedStatementInfos( remoteStatement );
     }
 
 
-    public StatementInfos createPreparedStatement( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements ) {
+    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements ) {
         return statement.new PreparedStatementInfos( remoteStatements );
     }
 

@@ -54,7 +54,6 @@ import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.RuleSets;
 import org.polypheny.fram.AbstractCatalog;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,9 +74,9 @@ class GlobalCatalog extends AbstractCatalog {
     private final Config sqlParserConfig;
     private final SqlDialect sqlDialect;
 
-    private final Map<String, ConnectionInfos> catalogConnections = new HashMap<>();
-    private final Map<String, StatementInfos> remoteToLocalStatementMap = new HashMap<>();
-    private final Map<String, Set<TransactionHandle>> openTransactionsMap = new HashMap<>();
+    private final Map<ConnectionHandle, ConnectionInfos> catalogConnections = new HashMap<>();
+    private final Map<StatementHandle, StatementInfos> remoteToLocalStatementMap = new HashMap<>();
+    private final Map<ConnectionHandle, Set<TransactionHandle>> openTransactionsMap = new HashMap<>();
 
     private final AtomicReference<UUID> nodeIdReference = new AtomicReference<>();
 
@@ -105,7 +104,7 @@ class GlobalCatalog extends AbstractCatalog {
                 connetion.commit();
             }
         } catch ( SQLException e ) {
-            throw Utils.extractAndThrow( e );
+            throw Utils.wrapException( e );
         }
     }
 
@@ -141,7 +140,7 @@ class GlobalCatalog extends AbstractCatalog {
                         connetion.commit();
                     }
                 } catch ( SQLException e ) {
-                    throw Utils.extractAndThrow( e );
+                    throw Utils.wrapException( e );
                 }
                 nodeIdReference.set( nodeId );
             }
@@ -154,181 +153,281 @@ class GlobalCatalog extends AbstractCatalog {
     @Override
     public MetaResultSet getTables( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat tableNamePattern, List<String> typeList ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getTables( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, typeList );
+        final MetaResultSet result = xaMeta.getTables( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, typeList );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getColumns( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat tableNamePattern, Pat columnNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, columnNamePattern );
+        final MetaResultSet result = xaMeta.getColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, columnNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getSchemas( ConnectionInfos connection, String catalog, Pat schemaPattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getSchemas( catalogConnection.getConnectionHandle(), catalog, schemaPattern );
+        final MetaResultSet result = xaMeta.getSchemas( catalogConnection.getConnectionHandle(), catalog, schemaPattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getCatalogs( ConnectionInfos connection ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getCatalogs( catalogConnection.getConnectionHandle() );
+        final MetaResultSet result = xaMeta.getCatalogs( catalogConnection.getConnectionHandle() );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getTableTypes( ConnectionInfos connection ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getTableTypes( catalogConnection.getConnectionHandle() );
+        final MetaResultSet result = xaMeta.getTableTypes( catalogConnection.getConnectionHandle() );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getProcedures( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat procedureNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getProcedures( catalogConnection.getConnectionHandle(), catalog, schemaPattern, procedureNamePattern );
+        final MetaResultSet result = xaMeta.getProcedures( catalogConnection.getConnectionHandle(), catalog, schemaPattern, procedureNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getProcedureColumns( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat procedureNamePattern, Pat columnNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getProcedureColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, procedureNamePattern, columnNamePattern );
+        final MetaResultSet result = xaMeta.getProcedureColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, procedureNamePattern, columnNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getColumnPrivileges( ConnectionInfos connection, String catalog, String schema, String table, Pat columnNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getColumnPrivileges( catalogConnection.getConnectionHandle(), catalog, schema, table, columnNamePattern );
+        final MetaResultSet result = xaMeta.getColumnPrivileges( catalogConnection.getConnectionHandle(), catalog, schema, table, columnNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getTablePrivileges( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat tableNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getTablePrivileges( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern );
+        final MetaResultSet result = xaMeta.getTablePrivileges( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getBestRowIdentifier( ConnectionInfos connection, String catalog, String schema, String table, int scope, boolean nullable ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getBestRowIdentifier( catalogConnection.getConnectionHandle(), catalog, schema, table, scope, nullable );
+        final MetaResultSet result = xaMeta.getBestRowIdentifier( catalogConnection.getConnectionHandle(), catalog, schema, table, scope, nullable );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getVersionColumns( ConnectionInfos connection, String catalog, String schema, String table ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getVersionColumns( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        final MetaResultSet result = xaMeta.getVersionColumns( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getPrimaryKeys( ConnectionInfos connection, String catalog, String schema, String table ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getPrimaryKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        final MetaResultSet result = xaMeta.getPrimaryKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getImportedKeys( ConnectionInfos connection, String catalog, String schema, String table ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getImportedKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        final MetaResultSet result = xaMeta.getImportedKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getExportedKeys( ConnectionInfos connection, String catalog, String schema, String table ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getExportedKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        final MetaResultSet result = xaMeta.getExportedKeys( catalogConnection.getConnectionHandle(), catalog, schema, table );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getCrossReference( ConnectionInfos connection, String parentCatalog, String parentSchema, String parentTable, String foreignCatalog, String foreignSchema, String foreignTable ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getCrossReference( catalogConnection.getConnectionHandle(), parentCatalog, parentSchema, parentTable, foreignCatalog, foreignSchema, foreignTable );
+        final MetaResultSet result = xaMeta.getCrossReference( catalogConnection.getConnectionHandle(), parentCatalog, parentSchema, parentTable, foreignCatalog, foreignSchema, foreignTable );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getTypeInfo( ConnectionInfos connection ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getTypeInfo( catalogConnection.getConnectionHandle() );
+        final MetaResultSet result = xaMeta.getTypeInfo( catalogConnection.getConnectionHandle() );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getIndexInfo( ConnectionInfos connection, String catalog, String schema, String table, boolean unique, boolean approximate ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getIndexInfo( catalogConnection.getConnectionHandle(), catalog, schema, table, unique, approximate );
+        final MetaResultSet result = xaMeta.getIndexInfo( catalogConnection.getConnectionHandle(), catalog, schema, table, unique, approximate );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getUDTs( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat typeNamePattern, int[] types ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getUDTs( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern, types );
+        final MetaResultSet result = xaMeta.getUDTs( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern, types );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getSuperTypes( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat typeNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getSuperTypes( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern );
+        final MetaResultSet result = xaMeta.getSuperTypes( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getSuperTables( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat tableNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getSuperTables( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern );
+        final MetaResultSet result = xaMeta.getSuperTables( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getAttributes( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat typeNamePattern, Pat attributeNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getAttributes( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern, attributeNamePattern );
+        final MetaResultSet result = xaMeta.getAttributes( catalogConnection.getConnectionHandle(), catalog, schemaPattern, typeNamePattern, attributeNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getClientInfoProperties( ConnectionInfos connection ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getClientInfoProperties( catalogConnection.getConnectionHandle() );
+        final MetaResultSet result = xaMeta.getClientInfoProperties( catalogConnection.getConnectionHandle() );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getFunctions( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat functionNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getFunctions( catalogConnection.getConnectionHandle(), catalog, schemaPattern, functionNamePattern );
+        final MetaResultSet result = xaMeta.getFunctions( catalogConnection.getConnectionHandle(), catalog, schemaPattern, functionNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getFunctionColumns( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat functionNamePattern, Pat columnNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getFunctionColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, functionNamePattern, columnNamePattern );
+        final MetaResultSet result = xaMeta.getFunctionColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, functionNamePattern, columnNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     @Override
     public MetaResultSet getPseudoColumns( ConnectionInfos connection, String catalog, Pat schemaPattern, Pat tableNamePattern, Pat columnNamePattern ) {
         final ConnectionInfos catalogConnection = getOrOpenCatalogConnection( connection );
-        return xaMeta.getPseudoColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, columnNamePattern );
+        final MetaResultSet result = xaMeta.getPseudoColumns( catalogConnection.getConnectionHandle(), catalog, schemaPattern, tableNamePattern, columnNamePattern );
+        if ( !result.firstFrame.done ) {
+            throw new UnsupportedOperationException( "Catalog.MetaResultSet.firstFrame.done == false! I guess we need something like a ResultSet implementation..." );
+        }
+        return result;
     }
 
 
     private ConnectionInfos getOrOpenCatalogConnection( final ConnectionInfos connection ) {
         synchronized ( catalogConnections ) {
-            return catalogConnections.computeIfAbsent( connection.getConnectionHandle().id, cid -> {
+            return catalogConnections.computeIfAbsent( connection.getConnectionHandle(), cid -> {
                 // this is an unknown connection
                 // its first occurrence creates a new connection here to represent the original connection
                 xaMeta.openConnection( connection.getConnectionHandle(), null );
@@ -340,10 +439,10 @@ class GlobalCatalog extends AbstractCatalog {
 
     private ConnectionInfos getOrOpenCatalogConnection( final ConnectionHandle connectionHandle ) {
         synchronized ( catalogConnections ) {
-            return catalogConnections.computeIfAbsent( connectionHandle.id, cid -> {
+            return catalogConnections.computeIfAbsent( connectionHandle, handle -> {
                 // this is an unknown connection
                 // its first occurrence creates a new connection here to represent the original connection
-                final ConnectionInfos connection = new ConnectionInfos( new ConnectionHandle( cid ) );
+                final ConnectionInfos connection = new ConnectionInfos( handle );
                 xaMeta.openConnection( connection.getConnectionHandle(), null );
                 return connection;
             } );
@@ -358,8 +457,8 @@ class GlobalCatalog extends AbstractCatalog {
 
     private ConnectionInfos getConnection( final ConnectionHandle connectionHandle ) throws NoSuchConnectionException {
         synchronized ( catalogConnections ) {
-            if ( catalogConnections.containsKey( connectionHandle.id ) ) {
-                return catalogConnections.get( connectionHandle.id );
+            if ( catalogConnections.containsKey( connectionHandle ) ) {
+                return catalogConnections.get( connectionHandle );
             }
             throw new NoSuchConnectionException( connectionHandle.id );
         }
@@ -373,7 +472,7 @@ class GlobalCatalog extends AbstractCatalog {
 
     private StatementInfos getOrCreateStatement( final ConnectionInfos connection, final StatementHandle statementHandle ) {
         synchronized ( remoteToLocalStatementMap ) {
-            return remoteToLocalStatementMap.computeIfAbsent( statementHandle.toString(), statementHandleString -> {
+            return remoteToLocalStatementMap.computeIfAbsent( statementHandle, statementHandleString -> {
                 // this is an unknown statement
                 // its first occurrence creates a new local statement here to represent the original remote statement
                 return new StatementInfos( connection, xaMeta.createStatement( connection.getConnectionHandle() ) );
@@ -384,8 +483,8 @@ class GlobalCatalog extends AbstractCatalog {
 
     private StatementInfos getStatement( final StatementHandle statementHandle ) throws NoSuchStatementException {
         synchronized ( remoteToLocalStatementMap ) {
-            if ( remoteToLocalStatementMap.containsKey( statementHandle.toString() ) ) {
-                return remoteToLocalStatementMap.get( statementHandle.toString() );
+            if ( remoteToLocalStatementMap.containsKey( statementHandle ) ) {
+                return remoteToLocalStatementMap.get( statementHandle );
             }
             throw new NoSuchStatementException( statementHandle );
         }
@@ -394,7 +493,7 @@ class GlobalCatalog extends AbstractCatalog {
 
     private StatementInfos createStatement( final ConnectionInfos connection, final StatementHandle statementHandle ) {
         synchronized ( remoteToLocalStatementMap ) {
-            return remoteToLocalStatementMap.compute( statementHandle.toString(), ( handle, statementInfos ) -> {
+            return remoteToLocalStatementMap.compute( statementHandle, ( handle, statementInfos ) -> {
                 if ( statementInfos == null ) {
                     return new StatementInfos( connection, xaMeta.createStatement( connection.getConnectionHandle() ) );
                 } else {
@@ -407,8 +506,6 @@ class GlobalCatalog extends AbstractCatalog {
 
     @Override
     public ExecuteResult prepareAndExecuteDataDefinition( TransactionHandle transactionHandle, StatementHandle statementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) {
-        final RemoteExecuteResult result;
-
         final ConnectionInfos connection = getOrOpenCatalogConnection( statementHandle );
         final StatementInfos catalogStatement = getOrCreateStatement( connection, statementHandle );
 
@@ -416,7 +513,7 @@ class GlobalCatalog extends AbstractCatalog {
             final TransactionInfos catalogTransaction = xaMeta.getOrStartTransaction( connection, transactionHandle );
             LOGGER.debug( "executing catalog.prepareAndExecuteDataDefinition( ... ) in the context of {}", catalogTransaction );
 
-            openTransactionsMap.compute( connection.getConnectionHandle().id, ( connectionId, transactions ) -> {
+            openTransactionsMap.compute( connection.getConnectionHandle(), ( connectionId, transactions ) -> {
                 if ( transactions == null ) {
                     transactions = new HashSet<>();
                 }
@@ -425,19 +522,19 @@ class GlobalCatalog extends AbstractCatalog {
             } );
             return xaMeta.prepareAndExecute( catalogStatement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
         } catch ( XAException | NoSuchStatementException e ) {
-            throw Utils.extractAndThrow( e );
+            throw Utils.wrapException( e );
         }
     }
 
 
     @Override
     public void onePhaseCommit( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return;
         }
 
         xaMeta.onePhaseCommit( connectionHandle, transactionHandle );
-        openTransactionsMap.compute( connectionHandle.id, ( connectionId, transactions ) -> {
+        openTransactionsMap.compute( connectionHandle, ( connectionId, transactions ) -> {
             if ( transactions == null || transactions.isEmpty() ) {
                 return null;
             }
@@ -452,23 +549,23 @@ class GlobalCatalog extends AbstractCatalog {
 
     @Override
     public void commit( ConnectionHandle connectionHandle ) {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return;
         }
 
         xaMeta.commit( connectionHandle );
-        openTransactionsMap.remove( connectionHandle.id );
+        openTransactionsMap.remove( connectionHandle );
     }
 
 
     @Override
     public void commit( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return;
         }
 
         xaMeta.commit( connectionHandle, transactionHandle );
-        openTransactionsMap.compute( connectionHandle.id, ( connectionId, transactions ) -> {
+        openTransactionsMap.compute( connectionHandle, ( connectionId, transactions ) -> {
             if ( transactions == null || transactions.isEmpty() ) {
                 return null;
             }
@@ -483,11 +580,11 @@ class GlobalCatalog extends AbstractCatalog {
 
     @Override
     public boolean prepareCommit( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return true;
         }
 
-        Set<TransactionHandle> transactions = openTransactionsMap.getOrDefault( connectionHandle.id, Collections.emptySet() );
+        Set<TransactionHandle> transactions = openTransactionsMap.getOrDefault( connectionHandle, Collections.emptySet() );
         if ( transactions.contains( transactionHandle ) ) {
             return xaMeta.prepareCommit( connectionHandle, transactionHandle );
         } else {
@@ -498,23 +595,23 @@ class GlobalCatalog extends AbstractCatalog {
 
     @Override
     public void rollback( ConnectionHandle connectionHandle ) {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return;
         }
 
         xaMeta.rollback( connectionHandle );
-        openTransactionsMap.remove( connectionHandle.id );
+        openTransactionsMap.remove( connectionHandle );
     }
 
 
     @Override
     public void rollback( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        if ( !catalogConnections.containsKey( connectionHandle.id ) ) {
+        if ( !openTransactionsMap.containsKey( connectionHandle ) ) {
             return;
         }
 
         xaMeta.rollback( connectionHandle, transactionHandle );
-        openTransactionsMap.compute( connectionHandle.id, ( connectionId, transactions ) -> {
+        openTransactionsMap.compute( connectionHandle, ( connectionId, transactions ) -> {
             if ( transactions == null || transactions.isEmpty() ) {
                 return null;
             }
@@ -545,11 +642,13 @@ class GlobalCatalog extends AbstractCatalog {
 
     @Override
     public void closeConnection( ConnectionInfos connection ) {
-        if ( !catalogConnections.containsKey( connection.getConnectionHandle().id ) ) {
+        if ( !catalogConnections.containsKey( connection.getConnectionHandle() ) ) {
             return;
         }
 
         xaMeta.closeConnection( connection.getConnectionHandle() );
+        catalogConnections.remove( connection.getConnectionHandle() );
+        openTransactionsMap.remove( connection.getConnectionHandle() );
     }
 
 

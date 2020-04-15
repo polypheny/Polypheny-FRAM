@@ -27,21 +27,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import lombok.EqualsAndHashCode;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
+import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
+import org.apache.calcite.avatica.Meta.ExecuteResult;
+import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.StatementHandle;
+import org.jooq.lambda.function.Function1;
+import org.jooq.lambda.function.Function5;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
+import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 
 
 /**
  * Represents a (Prepared)Statement
  */
+@EqualsAndHashCode(doNotUseGetters = true, onlyExplicitlyIncluded = true)
 public class StatementInfos {
 
+    @EqualsAndHashCode.Include
     protected final ConnectionInfos connection;
+    @EqualsAndHashCode.Include
     protected final StatementHandle statementHandle;
     protected final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements = new LinkedHashMap<>();
     protected final Map<RemoteStatementHandle, Set<AbstractRemoteNode>> remoteNodes = new LinkedHashMap<>();
@@ -74,17 +85,17 @@ public class StatementInfos {
     }
 
 
-    public ResultSetInfos createResultSet( List<Entry<AbstractRemoteNode, RemoteExecuteResult>> remoteResults ) {
+    public ResultSetInfos createResultSet( Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
         synchronized ( this ) {
-            this.resultSetInfos = new ResultSetInfos.SingleResult( this, remoteResults );
+            this.resultSetInfos = new QueryResultSet( this, remoteResults, resultsMergeFunction, resultsFetchFunction );
             return this.resultSetInfos;
         }
     }
 
 
-    public ResultSetInfos createBatchResultSet( List<Entry<AbstractRemoteNode, RemoteExecuteBatchResult>> remoteBatchResults ) {
+    public ResultSetInfos createBatchResultSet( Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
         synchronized ( this ) {
-            this.resultSetInfos = new ResultSetInfos.BatchResult( this, remoteBatchResults );
+            this.resultSetInfos = new BatchResultSetInfos( this, remoteBatchResults, resultMergeFunction );
             return this.resultSetInfos;
         }
     }
@@ -119,6 +130,7 @@ public class StatementInfos {
     }
 
 
+    @EqualsAndHashCode(callSuper = true)
     public class PreparedStatementInfos extends StatementInfos {
 
         PreparedStatementInfos( final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
