@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
-import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
@@ -81,7 +80,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection.getCluster() );
 
         if ( LOGGER.isTraceEnabled() ) {
@@ -105,20 +104,18 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             } );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-
-        return resultSetInfos.getExecuteResult();
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection.getCluster() );
 
         if ( LOGGER.isTraceEnabled() ) {
@@ -142,15 +139,13 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             } );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-
-        return resultSetInfos.getExecuteResult();
     }
 
 
@@ -207,7 +202,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
 
     @Override
-    public ExecuteResult execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
+    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
         if ( !(statement instanceof PreparedStatementInfos) ) {
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
@@ -236,15 +231,13 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             } );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-
-        return resultSetInfos.getExecuteResult();
     }
 
 

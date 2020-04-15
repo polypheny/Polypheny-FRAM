@@ -31,7 +31,6 @@ import java.util.Objects;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
-import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -81,7 +80,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         switch ( sql.getKind() ) {
@@ -99,19 +98,17 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             remoteResults.put( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-
-        return resultSetInfos.getExecuteResult();
     }
 
 
-    protected ExecuteResult prepareAndExecuteDataManipulationInsert( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    protected ResultSetInfos prepareAndExecuteDataManipulationInsert( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataManipulationInsert( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         final SqlInsert insertSql = (SqlInsert) sql;
@@ -175,19 +172,18 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             remoteResults.put( cluster.getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
 
-        final ResultSetInfos resultSetInfos = statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-        return resultSetInfos.getExecuteResult();
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
@@ -319,7 +315,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public ExecuteResult execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
+    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
         if ( !(statement instanceof PreparedStatementInfos) ) {
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
@@ -347,14 +343,13 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             statement.addAccessedNode( executionTarget, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
         } );
 
-        final ResultSetInfos resultSet = statement.createResultSet( Collections.singletonMap( executionTarget, response ), origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+        return statement.createResultSet( Collections.singletonMap( executionTarget, response ), origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
             } catch ( RemoteException e ) {
                 throw Utils.wrapException( e );
             }
         } );
-        return resultSet.getExecuteResult();
     }
 
 

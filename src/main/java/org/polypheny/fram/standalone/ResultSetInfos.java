@@ -32,6 +32,7 @@ import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.RemoteMeta;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
@@ -61,6 +62,20 @@ public abstract class ResultSetInfos {
         private final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
         private final ExecuteResult executeResult;
         private final Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
+
+
+        public QueryResultSet( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteResult remoteResult ) {
+            super( statement );
+            this.origins.put( origin, remoteResult );
+            this.executeResult = remoteResult.toExecuteResult();
+            this.resultsFetchFunction = ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+                try {
+                    return origin.fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            };
+        }
 
 
         public QueryResultSet( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {

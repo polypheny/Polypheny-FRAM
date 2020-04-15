@@ -646,17 +646,15 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         try {
             LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
-            final ExecuteResult result = executionDurationTimer.recordCallable(
-                    () -> {
-                        return protocol.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-                    }
+            final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
+                    () -> protocol.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
             // force a new planner since the schema has changed
             connection.getPlanner( true );
 
-            LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            return result;
+            LOGGER.trace( "prepareAndExecuteDataDefinition( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, resultSet );
+            return resultSet.getExecuteResult();
         } catch ( RemoteException ex ) {
             throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
@@ -752,12 +750,12 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         LOGGER.debug( "prepareAndExecuteDataManipulation(connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         try {
-            final ExecuteResult result = executionDurationTimer.recordCallable(
+            final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
                     () -> protocol.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
-            LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            return result;
+            LOGGER.trace( "prepareAndExecuteDataManipulation( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, resultSet );
+            return resultSet.getExecuteResult();
         } catch ( RemoteException ex ) {
             throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
@@ -770,12 +768,12 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         LOGGER.debug( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         try {
-            final ExecuteResult result = executionDurationTimer.recordCallable(
+            final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
                     () -> protocol.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback )
             );
 
-            LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-            return result;
+            LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, resultSet );
+            return resultSet.getExecuteResult();
         } catch ( RemoteException ex ) {
             throw Utils.wrapException( ex );
         } catch ( Exception ex ) {
@@ -823,12 +821,12 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         final StatementInfos statement = getStatement( statementHandle );
 
         try {
-            final ExecuteResult result = executionDurationTimer.recordCallable(
+            final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
                     () -> protocol.execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame )
             );
 
-            LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, result );
-            return result;
+            LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, resultSet );
+            return resultSet.getExecuteResult();
         } catch ( NoSuchStatementException ex ) {
             throw ex;
         } catch ( RemoteException ex ) {
