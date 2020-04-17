@@ -23,11 +23,11 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import lombok.EqualsAndHashCode;
+import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
@@ -134,33 +134,26 @@ public class StatementInfos {
     public class PreparedStatementInfos extends StatementInfos {
 
         PreparedStatementInfos( final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
-            this( new SimpleImmutableEntry<>( remoteNode, remoteStatement ) );
+            this( Collections.singletonMap( remoteNode, remoteStatement ), origins -> remoteStatement.toStatementHandle().signature );
         }
 
 
-        PreparedStatementInfos( final Entry<AbstractRemoteNode, RemoteStatementHandle> remoteStatement ) {
-            this( Collections.singletonList( remoteStatement ) );
-        }
-
-
-        PreparedStatementInfos( final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements ) {
+        PreparedStatementInfos( final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Meta.Signature> signatureMergeFunction ) {
             super( StatementInfos.this.connection, StatementInfos.this.statementHandle );
 
-            remoteStatements.forEach( entry -> {
-                this.remoteStatements.put( entry.getKey(), entry.getValue() );
-                this.remoteNodes.compute( entry.getValue(), ( sh, set ) -> {
+            remoteStatements.forEach( ( abstractRemoteNode, remoteStatementHandle ) -> {
+                this.remoteStatements.put( abstractRemoteNode, remoteStatementHandle );
+                this.remoteNodes.compute( remoteStatementHandle, ( sh, set ) -> {
                     if ( set == null ) {
                         set = new HashSet<>();
                     }
-                    set.add( entry.getKey() );
+                    set.add( abstractRemoteNode );
                     return set;
                 } );
-                this.connection.addAccessedNode( entry.getKey(), RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( entry.getValue().toStatementHandle().connectionId ) ) );
+                this.connection.addAccessedNode( abstractRemoteNode, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandle.toStatementHandle().connectionId ) ) );
             } );
 
-            // BEGIN HACK
-            this.statementHandle.signature = remoteStatements.isEmpty() ? null : remoteStatements.get( 0 ).getValue().toStatementHandle().signature;
-            // END HACK
+            this.statementHandle.signature = signatureMergeFunction.apply( remoteStatements );
         }
 
 

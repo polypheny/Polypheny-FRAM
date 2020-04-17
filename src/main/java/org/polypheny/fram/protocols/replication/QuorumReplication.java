@@ -19,14 +19,11 @@ package org.polypheny.fram.protocols.replication;
 
 import java.io.Serializable;
 import java.rmi.RemoteException;
-import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -60,6 +57,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public static final QuorumReplication ROWA = new QuorumReplication();
 
     private Map<ConnectionInfos, List<AbstractRemoteNode>> openConnections = new HashMap<>();
+
 
     /**
      * For 1SR consistency, it is required that the read and the write quorum have at least one node in common.
@@ -158,7 +156,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         }
 
         final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
-        final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements = new LinkedList<>();
+        final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
 
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
@@ -166,12 +164,16 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             }
             final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
 
-            remoteStatements.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+            preparedStatements.put( currentRemote, remoteStatementHandleRsp.getValue() );
 
             connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
         } );
 
-        return connection.createPreparedStatement( statement, remoteStatements );
+        return connection.createPreparedStatement( statement, preparedStatements, remoteStatements -> {
+            // BEGIN HACK
+            return remoteStatements.values().iterator().next().toStatementHandle().signature;
+            // END HACK
+        } );
     }
 
 
@@ -184,7 +186,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         }
 
         final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
-        final List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements = new LinkedList<>();
+        final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
 
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
@@ -192,12 +194,16 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             }
             final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
 
-            remoteStatements.add( new SimpleImmutableEntry<>( currentRemote, remoteStatementHandleRsp.getValue() ) );
+            preparedStatements.put( currentRemote, remoteStatementHandleRsp.getValue() );
 
             connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
         } );
 
-        return connection.createPreparedStatement( statement, remoteStatements );
+        return connection.createPreparedStatement( statement, preparedStatements, remoteStatements -> {
+            // BEGIN HACK
+            return remoteStatements.values().iterator().next().toStatementHandle().signature;
+            // END HACK
+        } );
     }
 
 

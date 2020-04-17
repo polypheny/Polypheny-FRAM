@@ -23,7 +23,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -33,8 +32,10 @@ import lombok.EqualsAndHashCode;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
+import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.tools.Planner;
+import org.jooq.lambda.function.Function1;
 import org.polypheny.fram.Catalog;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
@@ -144,18 +145,13 @@ public class ConnectionInfos {
     }
 
 
-    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, AbstractRemoteNode remoteNode, RemoteStatementHandle remoteStatement ) {
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
         return statement.new PreparedStatementInfos( remoteNode, remoteStatement );
     }
 
 
-    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, Entry<AbstractRemoteNode, RemoteStatementHandle> remoteStatement ) {
-        return statement.new PreparedStatementInfos( remoteStatement );
-    }
-
-
-    public PreparedStatementInfos createPreparedStatement( StatementInfos statement, List<Entry<AbstractRemoteNode, RemoteStatementHandle>> remoteStatements ) {
-        return statement.new PreparedStatementInfos( remoteStatements );
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction ) {
+        return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction );
     }
 
 

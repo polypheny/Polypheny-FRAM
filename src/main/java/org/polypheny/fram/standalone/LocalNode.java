@@ -50,6 +50,7 @@ import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +69,7 @@ class LocalNode extends AbstractLocalNode {
 
     private final Map<String, ConnectionInfos> remoteToLocalConnectionMap = new HashMap<>();
     private final Map<String, StatementInfos> remoteToLocalStatementMap = new HashMap<>();
+    private final Map<ConnectionHandle, TransactionHandle> openTransactionsMap = new HashMap<>();
 
 
     private LocalNode() {

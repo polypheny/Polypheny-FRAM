@@ -17,7 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
@@ -25,6 +24,7 @@ import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,8 +37,12 @@ import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
+import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchConnectionException;
+import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
+import org.apache.calcite.avatica.remote.TypedValue;
+import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,9 +109,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void openConnection( final ConnectionHandle connectionHandle, final Map<String, String> info ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "openConnection( connectionHandle: {}, info: {} )", connectionHandle, info );
-        }
+        LOGGER.trace( "openConnection( connectionHandle: {}, info: {} )", connectionHandle, info );
 
         final Properties fullInfo = new Properties();
         fullInfo.putAll( this.settings );
@@ -122,9 +124,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
         // Avoid global synchronization of connection opening
         try {
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "opening new XAConnection" );
-            }
+            LOGGER.trace( "opening new XAConnection" );
             // TODO: check if info.user = settings.user --- if not, then use getXAConnection( String, String )
             XAConnection xaConnection = xaDataSource.getXAConnection( /*fullInfo.getProperty( "user", "SA" ), fullInfo.getProperty( "password", "" )*/ );
             XAConnection loadedXaConnection = xaConnectionCacheAsMap.putIfAbsent( connectionHandle.id, xaConnection );
@@ -145,9 +145,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void closeConnection( final ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
 
         final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
         if ( physicalXAConnection == null ) {
@@ -177,9 +175,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
 
     public void abortConnection( final ConnectionHandle connectionHandle ) {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "abortConnection( connectionHandle: {} )", connectionHandle );
-        }
+        LOGGER.trace( "abortConnection( connectionHandle: {} )", connectionHandle );
 
         final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
         if ( physicalXAConnection == null ) {
@@ -207,23 +203,17 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public TransactionInfos getOrStartTransaction( final ConnectionInfos connection, final TransactionHandle transactionHandle ) throws XAException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} )", connection, transactionHandle );
-        }
+        LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} )", connection, transactionHandle );
 
         final TransactionInfos result;
         try {
             synchronized ( transactionMap ) {
                 result = transactionMap.computeIfAbsent( transactionHandle, handleOfTransactionToStart -> {
-                    if ( LOGGER.isTraceEnabled() ) {
-                        LOGGER.trace( "starting a new transaction ( {} )", handleOfTransactionToStart );
-                    }
+                    LOGGER.trace( "starting a new transaction ( {} )", handleOfTransactionToStart );
 
                     final XAConnection xaConnection = xaConnectionCache.getIfPresent( connection.getConnectionHandle().id );
                     if ( xaConnection == null ) {
-                        if ( LOGGER.isDebugEnabled() ) {
-                            LOGGER.debug( "client requested SoT on an unknown connection {}", connection );
-                        }
+                        LOGGER.debug( "client requested SoT on an unknown connection {}", connection );
                         throw new RuntimeException( "Unknown connection " + connection.getConnectionHandle() );
                     }
 
@@ -236,16 +226,12 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
                     // BEGIN HACK
                     if ( ((org.hsqldb.jdbc.pool.JDBCXAResource) xaResource).withinGlobalTransaction() ) {
-                        if ( LOGGER.isWarnEnabled() ) {
-                            LOGGER.warn( "transaction {} - ALREADY STARTED for connection {}", transactionHandle, connection.getConnectionHandle() );
-                        }
+                        LOGGER.warn( "transaction {} - ALREADY STARTED for connection {}", transactionHandle, connection.getConnectionHandle() );
                         return new TransactionInfos( connection, handleOfTransactionToStart );
                     }
                     // END HACK
 
-                    if ( LOGGER.isTraceEnabled() ) {
-                        LOGGER.trace( "creating transaction {} for connection {}", transactionHandle.getTransactionId(), connection.getConnectionHandle() );
-                    }
+                    LOGGER.trace( "creating transaction {} for connection {}", transactionHandle.getTransactionId(), connection.getConnectionHandle() );
 
                     try {
                         xaResource.start( handleOfTransactionToStart, XAResource.TMNOFLAGS );
@@ -267,17 +253,18 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             }
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} ) = {}", connection, transactionHandle, result );
-        }
+        LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} ) = {}", connection, transactionHandle, result );
         return result;
     }
 
 
     @Override
     public void onePhaseCommit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOGGER.trace( "onePhaseCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+
+        if ( !transactionMap.containsKey( transactionHandle ) ) {
+            LOGGER.warn( "Call of onePhaseCommit() but there is no transaction present." );
+            return;
         }
 
         final XAResource xaResource;
@@ -285,9 +272,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "client requested commit (One Phase) unknown connection {}", connectionHandle );
-                }
+                LOGGER.debug( "client requested commit (One Phase) unknown connection {}", connectionHandle );
                 throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
             }
             xaResource = physicalXAConnection.getXAResource();
@@ -303,25 +288,24 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
         transactionMap.remove( transactionHandle );
 
-        if ( LOGGER.isDebugEnabled() ) {
-            LOGGER.debug( "TRANSACTION {} - COMMITTED (1P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
-        }
+        LOGGER.debug( "TRANSACTION {} - COMMITTED (1P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
     }
 
 
     @Override
     public boolean prepareCommit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOGGER.trace( "prepareCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+
+        if ( !transactionMap.containsKey( transactionHandle ) ) {
+            LOGGER.warn( "Call of prepareCommit() but there is no transaction present." );
+            return true;
         }
 
         final int prepareResult;
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                if ( LOGGER.isDebugEnabled() ) {
-                    LOGGER.debug( "client requested prepare unknown connection {}", connectionHandle );
-                }
+                LOGGER.debug( "client requested prepare unknown connection {}", connectionHandle );
                 throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
             }
 
@@ -336,9 +320,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             throw new XAException( ex.getMessage() );
         }
 
-        if ( LOGGER.isDebugEnabled() ) {
-            LOGGER.debug( "PREPARE COMMIT for TRANSACTION {} on connection {} = {}", transactionHandle.getTransactionId(), connectionHandle, prepareResult == XAResource.XA_OK ? "SUCCESS" : "FAIL" );
-        }
+        LOGGER.debug( "PREPARE COMMIT for TRANSACTION {} on connection {} = {}", transactionHandle.getTransactionId(), connectionHandle, prepareResult == XAResource.XA_OK ? "SUCCESS" : "FAIL" );
 
         return prepareResult == XAResource.XA_OK;
     }
@@ -346,8 +328,11 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void commit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOGGER.trace( "commit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+
+        if ( !transactionMap.containsKey( transactionHandle ) ) {
+            LOGGER.warn( "Call of commit() but there is no transaction present." );
+            return;
         }
 
         try {
@@ -370,12 +355,8 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
                     case 0: //XA_STATE_INITIAL
                     case 1: //XA_STATE_STARTED
                     case 2: //XA_STATE_ENDED
-                        if ( LOGGER.isTraceEnabled() ) {
-                            LOGGER.trace( "ending transaction {}", transactionHandle );
-                        }
-                        if ( LOGGER.isWarnEnabled() ) {
-                            LOGGER.warn( "Unprepared transaction {}. Fallback to One Phase Commit.", transactionHandle.getTransactionId() );
-                        }
+                        LOGGER.trace( "ending transaction {}", transactionHandle );
+                        LOGGER.warn( "Unprepared transaction {}. Fallback to One Phase Commit.", transactionHandle.getTransactionId() );
                         this.onePhaseCommit( connectionHandle, transactionHandle );
                         return;
 
@@ -393,25 +374,24 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             // END HACK
 
             // commit (2PC)
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "commiting (2P) transaction {}", transactionHandle );
-            }
+            LOGGER.trace( "commiting (2P) transaction {}", transactionHandle );
             xaResource.commit( transactionHandle, false );
             transactionMap.remove( transactionHandle );
         } catch ( SQLException e ) {
             throw new XAException( e.getMessage() );
         }
 
-        if ( LOGGER.isDebugEnabled() ) {
-            LOGGER.debug( "TRANSACTION {} - COMMITTED (2P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
-        }
+        LOGGER.debug( "TRANSACTION {} - COMMITTED (2P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
     }
 
 
     @Override
     public void rollback( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "rollback( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOGGER.trace( "rollback( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+
+        if ( !transactionMap.containsKey( transactionHandle ) ) {
+            LOGGER.warn( "Call of rollback() but there is no transaction present." );
+            return;
         }
 
         try {
@@ -432,9 +412,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
                 switch ( state ) {
                     case 0: //XA_STATE_INITIAL
                     case 1: //XA_STATE_STARTED
-                        if ( LOGGER.isTraceEnabled() ) {
-                            LOGGER.trace( "ending transaction {}", transactionHandle );
-                        }
+                        LOGGER.trace( "ending transaction {}", transactionHandle );
                         xaResource.end( transactionHandle, XAResource.TMFAIL );
                         // intended fall through
 
@@ -452,18 +430,71 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             // END HACK
 
             // rollback
-            if ( LOGGER.isTraceEnabled() ) {
-                LOGGER.trace( "rollback transaction {}", transactionHandle );
-            }
+            LOGGER.trace( "rollback transaction {}", transactionHandle );
             xaResource.rollback( transactionHandle );
             transactionMap.remove( transactionHandle );
         } catch ( SQLException e ) {
             throw new XAException( e.getMessage() );
         }
 
-        if ( LOGGER.isDebugEnabled() ) {
-            LOGGER.debug( "TRANSACTION {} - ROLLBACKED for connection {}", transactionHandle.getTransactionId(), connectionHandle );
+        LOGGER.debug( "TRANSACTION {} - ROLLBACKED for connection {}", transactionHandle.getTransactionId(), connectionHandle );
+    }
+
+
+    @Override
+    public ExecuteResult prepareAndExecute( StatementHandle h, String sql, long maxRowCount, PrepareCallback callback ) throws NoSuchStatementException {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
         }
+        return super.prepareAndExecute( h, sql, maxRowCount, callback );
+    }
+
+
+    @Override
+    public ExecuteResult prepareAndExecute( StatementHandle h, String sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws NoSuchStatementException {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        if ( maxRowsInFirstFrame == -1 ) {
+            maxRowsInFirstFrame = UNLIMITED_COUNT;
+        }
+        return super.prepareAndExecute( h, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    }
+
+
+    @Override
+    public StatementHandle prepare( ConnectionHandle ch, String sql, long maxRowCount ) {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        return super.prepare( ch, sql, maxRowCount );
+    }
+
+
+    @Override
+    public ExecuteResult execute( StatementHandle h, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException {
+        if ( maxRowsInFirstFrame == -1 ) {
+            maxRowsInFirstFrame = UNLIMITED_COUNT;
+        }
+        return super.execute( h, parameterValues, maxRowsInFirstFrame );
+    }
+
+
+    @Override
+    public ExecuteResult execute( StatementHandle h, List<TypedValue> parameterValues, long maxRowCount ) throws NoSuchStatementException {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        return super.execute( h, parameterValues, maxRowCount );
+    }
+
+
+    @Override
+    public Frame fetch( StatementHandle h, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
+        if ( fetchMaxRowCount == -1 ) {
+            fetchMaxRowCount = UNLIMITED_COUNT;
+        }
+        return super.fetch( h, offset, fetchMaxRowCount );
     }
 
 

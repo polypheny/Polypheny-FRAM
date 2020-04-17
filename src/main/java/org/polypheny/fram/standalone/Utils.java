@@ -135,12 +135,6 @@ public class Utils {
 
 
         @Override
-        public synchronized Throwable initCause( Throwable cause ) {
-            return this.delegate.initCause( cause );
-        }
-
-
-        @Override
         public boolean equals( Object o ) {
             return this.delegate.equals( o );
         }
@@ -155,12 +149,6 @@ public class Utils {
         @Override
         public StackTraceElement[] getStackTrace() {
             return this.delegate.getStackTrace();
-        }
-
-
-        @Override
-        public synchronized Throwable fillInStackTrace() {
-            return this.delegate.fillInStackTrace();
         }
 
 
