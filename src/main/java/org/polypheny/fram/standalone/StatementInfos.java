@@ -17,6 +17,8 @@
 package org.polypheny.fram.standalone;
 
 
+import io.vavr.Function1;
+import io.vavr.Function5;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
@@ -33,8 +35,6 @@ import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.jooq.lambda.function.Function1;
-import org.jooq.lambda.function.Function5;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;

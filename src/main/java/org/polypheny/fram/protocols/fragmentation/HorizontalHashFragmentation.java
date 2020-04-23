@@ -17,10 +17,14 @@
 package org.polypheny.fram.protocols.fragmentation;
 
 
+import io.vavr.Function2;
+import io.vavr.Function3;
 import java.io.Serializable;
 import java.rmi.RemoteException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -29,30 +33,33 @@ import java.util.ListIterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import org.apache.calcite.avatica.Meta;
-import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
+import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
-import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlDelete;
+import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlUpdate;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.jgroups.Address;
 import org.jgroups.util.Rsp;
@@ -76,13 +83,14 @@ import org.polypheny.fram.standalone.Utils;
 public class HorizontalHashFragmentation extends AbstractProtocol implements FragmentationProtocol {
 
     private final Map<PreparedStatementInfos, Map<SqlIdentifier, Integer>> primaryKeyOrdinals = new HashMap<>();
+    private final Map<PreparedStatementInfos, Function2<List<AbstractRemoteNode>, List<TypedValue>, List<AbstractRemoteNode>>> executionTargetsFunctions = new HashMap<>();
 
 
     public HorizontalHashFragmentation() {
     }
 
 
-    protected Map<SqlIdentifier, Integer> lookupPrimaryKeyOrdinals( final ConnectionInfos connection, final SqlIdentifier table ) {
+    protected Map<String, Integer> lookupPrimaryKeyColumnsNamesAndIndexes( final ConnectionInfos connection, final SqlIdentifier table ) {
         final String catalogName;
         final String schemaName;
         final String tableName;
@@ -106,31 +114,74 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 throw new RuntimeException( "Something went terrible wrong here..." );
         }
 
+        final List<String> primaryKeysColumnNames = lookupPrimaryKeyColumnsNames( connection, catalogName, schemaName, tableName );
+
+        final Map<String, Integer> primaryKeyNamesAndIndexes = new HashMap<>();
+        for ( String primaryKeyColumnName : primaryKeysColumnNames ) {
+            MetaResultSet columnInfo = connection.getCatalog().getColumns( connection, catalogName, Meta.Pat.of( schemaName ), Meta.Pat.of( tableName ), Meta.Pat.of( primaryKeyColumnName ) );
+            for ( Object row : columnInfo.firstFrame.rows ) {
+                Object[] cells = (Object[]) row;
+                final int columnIndex = (int) cells[16] - 1; // convert ordinal to index
+                if ( primaryKeyNamesAndIndexes.put( primaryKeyColumnName, columnIndex ) != null ) {
+                    throw new RuntimeException( "Search for the ordinals of the primary key columns was not specific enough!" );
+                }
+            }
+        }
+
+        return primaryKeyNamesAndIndexes;
+    }
+
+
+    protected List<Integer> lookupPrimaryKeyColumnsIndexes( final ConnectionInfos connection, final SqlIdentifier table ) {
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        List<Integer> primaryKeyColumnsIndexes = new ArrayList<>( primaryKeyColumnsNamesAndIndexes.values().size() );
+        primaryKeyColumnsIndexes.addAll( primaryKeyColumnsNamesAndIndexes.values() );
+        Collections.sort( primaryKeyColumnsIndexes );
+        return primaryKeyColumnsIndexes;
+    }
+
+
+    private List<String> lookupPrimaryKeyColumnsNames( final ConnectionInfos connection, final SqlIdentifier table ) {
+        final String catalogName;
+        final String schemaName;
+        final String tableName;
+        switch ( table.names.size() ) {
+            case 3:
+                catalogName = table.names.get( 0 );
+                schemaName = table.names.get( 1 );
+                tableName = table.names.get( 2 );
+                break;
+            case 2:
+                catalogName = null;
+                schemaName = table.names.get( 0 );
+                tableName = table.names.get( 1 );
+                break;
+            case 1:
+                catalogName = null;
+                schemaName = null;
+                tableName = table.names.get( 0 );
+                break;
+            default:
+                throw new RuntimeException( "Something went terrible wrong here..." );
+        }
+        return lookupPrimaryKeyColumnsNames( connection, catalogName, schemaName, tableName );
+    }
+
+
+    private List<String> lookupPrimaryKeyColumnsNames( final ConnectionInfos connection, final String catalogName, final String schemaName, final String tableName ) {
         final List<String> primaryKeysColumnNames = new LinkedList<>();
         MetaResultSet mrs = connection.getCatalog().getPrimaryKeys( connection, catalogName, schemaName, tableName );
         for ( Object row : mrs.firstFrame.rows ) {
             Object[] cells = (Object[]) row;
             primaryKeysColumnNames.add( (String) cells[3] );
         }
-
-        final Map<SqlIdentifier, Integer> primaryKeyOrdinals = new HashMap<>();
-        for ( String primaryKeyColumnName : primaryKeysColumnNames ) {
-            MetaResultSet columnInfo = connection.getCatalog().getColumns( connection, catalogName, Meta.Pat.of( schemaName ), Meta.Pat.of( tableName ), Meta.Pat.of( primaryKeyColumnName ) );
-            for ( Object row : columnInfo.firstFrame.rows ) {
-                Object[] cells = (Object[]) row;
-                final int ordinal = (int) cells[16];
-                if ( primaryKeyOrdinals.put( new SqlIdentifier(
-                        catalogName != null ? Arrays.asList( catalogName, schemaName, tableName, primaryKeyColumnName ) :
-                                schemaName != null ? Arrays.asList( schemaName, tableName, primaryKeyColumnName ) :
-                                        Arrays.asList( tableName, primaryKeyColumnName ),
-                        SqlParserPos.ZERO ), ordinal ) != null ) {
-                    throw new RuntimeException( "Search for the ordinals of the primary key columns was not specific enough!" );
-                }
-            }
-        }
-
-        return primaryKeyOrdinals;
+        return primaryKeysColumnNames;
     }
+
+
+    /*
+     *
+     */
 
 
     @Override
@@ -163,41 +214,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         final SqlNodeList targetColumns = sql.getTargetColumnList();
         final SqlBasicCall source = (SqlBasicCall) sql.getSource();
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals;
-        if ( targetColumns == null ) {
-            primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-        } else {
-            // search in targetColumns for the ordinal of the primary keys in this Statement
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
-
-        final List<TypedValue> primaryKeyValues = new LinkedList<>();
-        for ( int ordinal : primaryKeysColumnOrdinals.values() ) {
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
-
-        final AbstractRemoteNode[] remotes = connection.getCluster().getAllMembers().toArray( new AbstractRemoteNode[0] );
-        final int hash = Objects.hash( primaryKeyValues.toArray() );
-        final int winner = Math.abs( hash % remotes.length );
-        final AbstractRemoteNode executionTarget = remotes[winner];
-
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, executionTarget );
-
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-            }
-            remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
-        } );
-
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
-            }
-        } );
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -205,13 +222,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         LOGGER.trace( "prepareAndExecuteDataManipulationInsert( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
-
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-
-        final List<TypedValue> primaryKeyValues = new LinkedList<>();
-        for ( int ordinal : primaryKeysColumnOrdinals.values() ) {
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
 
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
@@ -268,12 +278,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             }
         } );
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-        if ( primaryKeysColumnOrdinals.size() > 1 ) {
+        final Map<String, Integer> primaryKeysColumnIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        if ( primaryKeysColumnIndexes.size() > 1 ) {
             // Composite primary key
             throw new UnsupportedOperationException( "Not implemented yet." );
         }
-        final SqlIdentifier primaryKey = primaryKeysColumnOrdinals.keySet().iterator().next();
+        final String primaryKey = primaryKeysColumnIndexes.keySet().iterator().next();
 
         final SqlNodeList selectList = sql.getSelectList();
         final SqlNode condition = sql.getWhere();
@@ -325,45 +335,21 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 }
                 throw ex;
             }
-            return statement.createResultSet( remoteResults, origins -> {
-                // results merge
-                boolean done = true;
-                List<Iterator<Object>> iterators = new LinkedList<>();
-                for ( RemoteExecuteResult rex : origins.values() ) {
-                    for ( MetaResultSet rs : rex.toExecuteResult().resultSets ) {
-                        done &= rs.firstFrame.done;
-                        iterators.add( rs.firstFrame.rows.iterator() );
-                    }
-                }
-                List<Object> rows = new LinkedList<>();
-                boolean _continue;
-                do {
-                    _continue = false;
-                    for ( Iterator<Object> iterator : iterators ) {
-                        if ( iterator.hasNext() ) {
-                            rows.add( iterator.next() );
-                            _continue = true;
-                        }
-                    }
-                } while ( _continue );
-                Signature signature = origins.values().iterator().next().toExecuteResult().resultSets.iterator().next().signature;
-                Frame frame = Frame.create( 0, done, rows );
-                return new Meta.ExecuteResult( Collections.singletonList( MetaResultSet.create( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, false, signature, frame ) ) );
-            }, ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            return statement.createResultSet( remoteResults, origins -> new HorizontalExecuteResultMergeFunction().apply( statement, origins, maxRowsInFirstFrame ), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
                 // fetch
                 throw new UnsupportedOperationException( "Not implemented yet." );
             } );
         }
 
         if ( condition.getKind() == SqlKind.EQUALS
-                && ((SqlCall) condition).<SqlIdentifier>operand( 0 ).names.reverse().get( 0 ).equalsIgnoreCase( primaryKey.names.reverse().get( 0 ) )
+                && ((SqlCall) condition).<SqlIdentifier>operand( 0 ).names.reverse().get( 0 ).equalsIgnoreCase( primaryKey )
                 && ((SqlCall) condition).<SqlNode>operand( 1 ).getKind() == SqlKind.LITERAL ) {
             // ... WHERE primary_key = ?
 
             final List<SqlLiteral> primaryKeyValues = new LinkedList<>();
             primaryKeyValues.add( (SqlLiteral) ((SqlCall) condition).<SqlNode>operand( 1 ) );
 
-            final AbstractRemoteNode[] remotes = connection.getCluster().getAllMembers().toArray( new AbstractRemoteNode[0] );
+            final AbstractRemoteNode[] remotes = connection.getCluster().getMembers().toArray( new AbstractRemoteNode[0] );
             final int hash = Objects.hash( primaryKeyValues.toArray() );
             final int winner = Math.abs( hash % remotes.length );
             final AbstractRemoteNode executionTarget = remotes[winner];
@@ -443,6 +429,11 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     }
 
 
+    /*
+     *
+     */
+
+
     @Override
     public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataManipulation( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
@@ -471,17 +462,34 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
         final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
         final SqlNodeList targetColumns = sql.getTargetColumnList();
-        final SqlBasicCall source = (SqlBasicCall) sql.getSource();
 
-        if ( targetColumns != null ) {
-            // search in targetColumns for the ordinal of the primary keys in this PreparedStatement
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
+        final Map<String, Integer> primaryKeyNameAndIndex = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyNameAndIndex.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
+        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-        if ( primaryKeysColumnOrdinals.size() > 1 ) {
-            // Composite primary key
-            throw new UnsupportedOperationException( "Not implemented yet." );
+        if ( targetColumns == null || targetColumns.size() == 0 ) {
+            // The insert statement has to provide values for every column in the order of the colums
+            // Thus, we can use the indexes of the primary key columns to find their corresponding values
+            for ( int primaryKeyColumnIndex : primaryKeyColumnsIndexes ) {
+                // The primary key FOO with the column index 2
+                // maps to the 3rd parameter value
+                primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnIndex, primaryKeyColumnIndex );
+            }
+        } else {
+            // search in targetColumns for the index of the primary keys in this PreparedStatement
+            for ( int columnIndex = 0; columnIndex < targetColumns.size(); ++columnIndex ) {
+                SqlNode node = targetColumns.get( columnIndex );
+                if ( node.isA( EnumSet.of( SqlKind.IDENTIFIER ) ) ) {
+                    final SqlIdentifier targetColumn = (SqlIdentifier) node;
+                    final Integer primaryKeyIndex = primaryKeyNameAndIndex.remove( targetColumn.names.reverse().get( 0 ) );
+                    if ( primaryKeyIndex != null ) {
+                        // The name was in the map
+                        primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyIndex, columnIndex );
+                    }
+                } else {
+                    throw new UnsupportedOperationException( "Not implemented yet." );
+                }
+            }
         }
 
         // inserts have to be prepared on all nodes
@@ -513,7 +521,16 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             // END HACK
         } );
 
-        this.primaryKeyOrdinals.put( preparedStatement, primaryKeysColumnOrdinals );
+        this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
+            final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
+            final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
+            int primaryKeyValueIndex = 0;
+            for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
+                primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
+            }
+            final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
+            return Arrays.asList( executionTargets[executionTargetIndex] );
+        } );
 
         return preparedStatement;
     }
@@ -523,42 +540,111 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         LOGGER.trace( "prepareDataManipulationDelete( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
         final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
-        final SqlNode condition = sql.getCondition();
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-        if ( primaryKeysColumnOrdinals.size() > 1 ) {
-            // Composite primary key
-            throw new UnsupportedOperationException( "Not implemented yet." );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
+        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+
+        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+
+        for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
+            // for every primary key and its index in the table
+            final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
+            if ( parameterIndex != null ) {
+                // the primary key is present in the condition
+                primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
+            } else {
+                // the primary key is NOT in the condition
+                throw new UnsupportedOperationException( "Not implemented yet." );
+            }
         }
-        final SqlIdentifier primaryKey = primaryKeysColumnOrdinals.keySet().iterator().next();
 
-        if ( condition.getKind() == SqlKind.EQUALS
-                && ((SqlCall) condition).<SqlIdentifier>operand( 0 ).names.reverse().get( 0 ).equalsIgnoreCase( primaryKey.names.reverse().get( 0 ) )
-                && ((SqlCall) condition).<SqlNode>operand( 1 ).getKind() == SqlKind.DYNAMIC_PARAM ) {
-            // DELETE FROM table WHERE primary_key = ?
+        final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
 
-            final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+        final Map<AbstractRemoteNode, RemoteStatementHandle> remoteResults = new HashMap<>();
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
+        } );
 
-            final Map<AbstractRemoteNode, RemoteStatementHandle> remoteResults = new HashMap<>();
-            responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-                if ( remoteStatementHandleRsp.hasException() ) {
-                    throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+        final PreparedStatementInfos preparedStatement = connection.createPreparedStatement( statement, remoteResults, remoteStatements -> {
+            // BEGIN HACK
+            return remoteStatements.values().iterator().next().toStatementHandle().signature;
+            // END HACK
+        } );
+
+        if ( sql.getCondition().accept( new SqlBasicVisitor<Boolean>() {
+            @Override
+            public Boolean visit( SqlCall call ) {
+                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
+                for ( SqlNode n : call.getOperandList() ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
                 }
-                remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
-            } );
+                return containsNotOnlyEquals;
+            }
 
-            final PreparedStatementInfos preparedStatement = connection.createPreparedStatement( statement, remoteResults, remoteStatements -> {
-                // BEGIN HACK
-                return remoteStatements.values().iterator().next().toStatementHandle().signature;
-                // END HACK
-            } );
 
-            this.primaryKeyOrdinals.put( preparedStatement, Collections.singletonMap( primaryKey, 1 ) );
+            @Override
+            public Boolean visit( SqlNodeList nodeList ) {
+                boolean containsNotOnlyEquals = false;
+                for ( SqlNode n : nodeList ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
+                }
+                return containsNotOnlyEquals;
+            }
 
-            return preparedStatement;
+
+            @Override
+            public Boolean visit( SqlIdentifier id ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlLiteral literal ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
+                throw new UnsupportedOperationException( "Not implemented yet." );
+            }
+
+
+            @Override
+            public Boolean visit( SqlDataTypeSpec type ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlDynamicParam param ) {
+                return false;
+            }
+        } ) ) {
+            // Currently only primary_key EQUALS ? is supported
+            throw new UnsupportedOperationException( "Not supported yet." );
         }
-        // else
-        throw new UnsupportedOperationException( "Not implemented yet." );
+
+        this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
+            final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
+            final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
+            int primaryKeyValueIndex = 0;
+            for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
+                primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
+            }
+            final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
+            return Arrays.asList( executionTargets[executionTargetIndex] );
+        } );
+
+        return preparedStatement;
     }
 
 
@@ -569,12 +655,9 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         final SqlNodeList targetColumns = sql.getTargetColumnList();
         final SqlNode condition = sql.getCondition();
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = lookupPrimaryKeyOrdinals( connection, table );
-        if ( primaryKeysColumnOrdinals.size() > 1 ) {
-            // Composite primary key
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
-        final SqlIdentifier primaryKey = primaryKeysColumnOrdinals.keySet().iterator().next();
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
+        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
         if ( targetColumns.accept( new SqlBasicVisitor<Boolean>() {
             @Override
@@ -589,40 +672,116 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
             @Override
             public Boolean visit( SqlIdentifier id ) {
-                return id.names.reverse().get( 0 ).equalsIgnoreCase( primaryKey.names.reverse().get( 0 ) );
+                return primaryKeyColumnsNamesAndIndexes.containsKey( id.names.reverse().get( 0 ) );
             }
         } ) ) {
-            // The primary key is in the targetColumns list and will be updated
+            // At least one primary key column is in the targetColumns list and will be updated
             throw new UnsupportedOperationException( "Not implemented yet." );
         }
 
-        if ( condition.getKind() == SqlKind.EQUALS
-                && ((SqlCall) condition).<SqlIdentifier>operand( 0 ).names.reverse().get( 0 ).equalsIgnoreCase( primaryKey.names.reverse().get( 0 ) )
-                && ((SqlCall) condition).<SqlNode>operand( 1 ).getKind() == SqlKind.DYNAMIC_PARAM ) {
-            // ... WHERE primary_key = ?
+        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
 
-            final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
-
-            final Map<AbstractRemoteNode, RemoteStatementHandle> remoteResults = new HashMap<>();
-            responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-                if ( remoteStatementHandleRsp.hasException() ) {
-                    throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-                }
-                remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
-            } );
-
-            final PreparedStatementInfos preparedStatement = connection.createPreparedStatement( statement, remoteResults, remoteStatements -> {
-                // BEGIN HACK
-                return remoteStatements.values().iterator().next().toStatementHandle().signature;
-                // END HACK
-            } );
-
-            this.primaryKeyOrdinals.put( preparedStatement, Collections.singletonMap( primaryKey, targetColumns.size() + 1 /* the last "?" */ ) );
-
-            return preparedStatement;
+        for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
+            // for every primary key and its index in the table
+            final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
+            if ( parameterIndex != null ) {
+                // the primary key is present in the condition
+                primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
+            } else {
+                // the primary key is NOT in the condition
+                throw new UnsupportedOperationException( "Not implemented yet." );
+            }
         }
 
-        throw new UnsupportedOperationException( "Not implemented yet." );
+        final int numberOfDynamicParameters = targetColumns.accept( new SqlDynamicParamsCounter() ) + condition.accept( new SqlDynamicParamsCounter() );
+
+        // updates need to go everywhere
+        final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+
+        final Map<AbstractRemoteNode, RemoteStatementHandle> remoteResults = new HashMap<>();
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
+        } );
+
+        final PreparedStatementInfos preparedStatement = connection.createPreparedStatement( statement, remoteResults, remoteStatements -> {
+            // BEGIN HACK
+            return remoteStatements.values().iterator().next().toStatementHandle().signature;
+            // END HACK
+        } );
+
+        if ( sql.getCondition().accept( new SqlBasicVisitor<Boolean>() {
+            @Override
+            public Boolean visit( SqlCall call ) {
+                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
+                for ( SqlNode n : call.getOperandList() ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
+                }
+                return containsNotOnlyEquals;
+            }
+
+
+            @Override
+            public Boolean visit( SqlNodeList nodeList ) {
+                boolean containsNotOnlyEquals = false;
+                for ( SqlNode n : nodeList ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
+                }
+                return containsNotOnlyEquals;
+            }
+
+
+            @Override
+            public Boolean visit( SqlIdentifier id ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlLiteral literal ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
+                throw new UnsupportedOperationException( "Not implemented yet." );
+            }
+
+
+            @Override
+            public Boolean visit( SqlDataTypeSpec type ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlDynamicParam param ) {
+                return false;
+            }
+        } ) ) {
+            // Currently only primary_key EQUALS ? is supported
+            throw new UnsupportedOperationException( "Not supported yet." );
+        }
+
+        this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
+            final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
+            final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
+            int primaryKeyValueIndex = 0;
+            for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
+                primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
+            }
+            final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
+            return Arrays.asList( executionTargets[executionTargetIndex] );
+        } );
+
+        return preparedStatement;
     }
 
 
@@ -651,7 +810,42 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataQuerySelect( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
-        final Map<SqlIdentifier, Integer> primaryKeysColumnOrdinals = Collections.singletonMap( new SqlIdentifier( Arrays.asList( "USERTABLE", "YCSB_KEY" ), SqlParserPos.ZERO ), 1 );
+        final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
+            @Override
+            public SqlIdentifier visit( SqlIdentifier id ) {
+                return id;
+            }
+
+
+            @Override
+            public SqlIdentifier visit( SqlCall call ) {
+                switch ( call.getKind() ) {
+                    case AS:
+                        return call.operand( 0 );
+                }
+                return super.visit( call );
+            }
+        } );
+
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
+        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+
+        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+
+        boolean incompletePrimaryKey = false;
+        for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
+            // for every primary key and its index in the table
+            final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
+            if ( parameterIndex != null ) {
+                // the primary key is present in the condition
+                primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
+            } else {
+                // the primary key is NOT in the condition
+                incompletePrimaryKey = true;
+            }
+        }
+        final boolean final_incompletePrimaryKey = incompletePrimaryKey;
 
         final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
 
@@ -668,7 +862,82 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             return remoteStatements.values().iterator().next().toStatementHandle().signature;
             // END HACK
         } );
-        this.primaryKeyOrdinals.put( preparedStatement, primaryKeysColumnOrdinals );
+
+        // TODO: improve. Only the primary keys are relevant
+        if ( sql.getWhere().accept( new SqlBasicVisitor<Boolean>() {
+            @Override
+            public Boolean visit( SqlCall call ) {
+                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
+                for ( SqlNode n : call.getOperandList() ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
+                }
+                return containsNotOnlyEquals;
+            }
+
+
+            @Override
+            public Boolean visit( SqlNodeList nodeList ) {
+                boolean containsNotOnlyEquals = false;
+                for ( SqlNode n : nodeList ) {
+                    if ( n != null ) {
+                        containsNotOnlyEquals |= n.accept( this );
+                    }
+                }
+                return containsNotOnlyEquals;
+            }
+
+
+            @Override
+            public Boolean visit( SqlIdentifier id ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlLiteral literal ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
+                throw new UnsupportedOperationException( "Not implemented yet." );
+            }
+
+
+            @Override
+            public Boolean visit( SqlDataTypeSpec type ) {
+                return false;
+            }
+
+
+            @Override
+            public Boolean visit( SqlDynamicParam param ) {
+                return false;
+            }
+        } ) ) {
+            // We need to scan and thus the query needs to go to all nodes
+            this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, typedValues ) -> clusterMembers );
+        } else {
+            // It seems that we only have EQUALS in our WHERE condition
+            this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
+                if ( final_incompletePrimaryKey ) {
+                    return clusterMembers; // all are targets
+                }
+
+                final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
+                final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
+                int primaryKeyValueIndex = 0;
+                for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
+                    primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
+                }
+                final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
+                return Arrays.asList( executionTargets[executionTargetIndex] );
+            } );
+        }
+
         return preparedStatement;
     }
 
@@ -679,37 +948,38 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
 
-        final AbstractRemoteNode[] remotes = connection.getCluster().getAllMembers().toArray( new AbstractRemoteNode[0] );
-        final Map<SqlIdentifier, Integer> primaryKeyOrdinals = this.primaryKeyOrdinals.get( statement );
-        if ( primaryKeyOrdinals == null ) {
-            Objects.requireNonNull( primaryKeyOrdinals );
-        }
+        List<AbstractRemoteNode> executionTargets = this.executionTargetsFunctions.get( statement ).apply( connection.getCluster().getMembers(), parameterValues );
 
-        final List<TypedValue> primaryKeyValues = new LinkedList<>();
-        for ( int ordinal : primaryKeyOrdinals.values() ) {
-            primaryKeyValues.add( parameterValues.get( ordinal - 1 ) );
-        }
+        LOGGER.trace( "execute on {}", executionTargets );
 
-        final int hash = Objects.hash( primaryKeyValues.toArray() );
-        final int winner = Math.abs( hash % remotes.length );
-        final AbstractRemoteNode executionTarget = remotes[winner];
+        final RspList<RemoteExecuteResult> responseList = connection.getCluster().execute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, -1/*maxRowsInFirstFrame*/, executionTargets );
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "execute on {}", executionTarget );
-        }
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
+        for ( Entry<Address, Rsp<RemoteExecuteResult>> e : responseList.entrySet() ) {
+            final Address address = e.getKey();
+            final Rsp<RemoteExecuteResult> remoteExecuteBatchResultRsp = e.getValue();
 
-        final RemoteExecuteResult response = executionTarget.execute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, maxRowsInFirstFrame );
-        response.toExecuteResult().resultSets.forEach( resultSet -> {
-            connection.addAccessedNode( executionTarget, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-            statement.addAccessedNode( executionTarget, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-        } );
-
-        return statement.createResultSet( Collections.singletonMap( executionTarget, response ), origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
+            if ( remoteExecuteBatchResultRsp.hasException() ) {
+                final Throwable t = remoteExecuteBatchResultRsp.getException();
+                if ( t instanceof NoSuchStatementException ) {
+                    throw (NoSuchStatementException) t;
+                }
+                if ( t instanceof RemoteException ) {
+                    throw (RemoteException) t;
+                }
+                throw Utils.wrapException( t );
             }
+
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.put( currentRemote, remoteExecuteBatchResultRsp.getValue() );
+
+            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
+        }
+
+        return statement.createResultSet( remoteResults, origins -> new HorizontalExecuteResultMergeFunction().apply( statement, origins, maxRowsInFirstFrame ), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            // fetch
+            throw new UnsupportedOperationException( "Not implemented yet." );
         } );
     }
 
@@ -720,35 +990,27 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
 
-        final AbstractRemoteNode[] remotes = connection.getCluster().getAllMembers().toArray( new AbstractRemoteNode[0] );
+        // only INSERTS (or updates)
+
+        final List<AbstractRemoteNode> availableRemotes = connection.getCluster().getMembers();
         final Map<AbstractRemoteNode, List<UpdateBatch>> parameterValuesForRemoteNode = new HashMap<>();
-
-        final Map<SqlIdentifier, Integer> primaryKeyOrdinals = this.primaryKeyOrdinals.get( statement );
-
-        final Map<Integer, AbstractRemoteNode> resultsMap = new HashMap<>();
+        final Map<Integer, AbstractRemoteNode> mapToMergeTheUpdateCounts = new HashMap<>();
 
         for ( ListIterator<UpdateBatch> it = listOfParameterValues.listIterator(); it.hasNext(); ) {
             UpdateBatch ub = it.next();
             final List<TypedValue> parameterValues = ub.getParameterValuesList();
 
-            final List<TypedValue> primaryKeyValues = new LinkedList<>();
-            for ( int ordinal : primaryKeyOrdinals.values() ) {
-                primaryKeyValues.add( parameterValues.get( ordinal - 1 ) );
+            final List<AbstractRemoteNode> executionTargets = this.executionTargetsFunctions.get( statement ).apply( availableRemotes, parameterValues );
+
+            for ( AbstractRemoteNode executionTarget : executionTargets ) {
+                final List<UpdateBatch> pVs = parameterValuesForRemoteNode.getOrDefault( executionTarget, new LinkedList<>() );
+                pVs.add( ub );
+                parameterValuesForRemoteNode.put( executionTarget, pVs );
+                mapToMergeTheUpdateCounts.put( it.previousIndex(), executionTarget ); // Here we have then the last of the list providing the updateCount. For now acceptable.
             }
-
-            final int hash = Objects.hash( primaryKeyValues.toArray() );
-            final int winner = Math.abs( hash % remotes.length );
-            final AbstractRemoteNode executionTarget = remotes[winner];
-
-            final List<UpdateBatch> pVs = parameterValuesForRemoteNode.getOrDefault( executionTarget, new LinkedList<>() );
-            pVs.add( ub );
-            parameterValuesForRemoteNode.put( executionTarget, pVs );
-            resultsMap.put( it.previousIndex(), executionTarget );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "executeBatch on {}", parameterValuesForRemoteNode.keySet() );
-        }
+        LOGGER.trace( "executeBatch on {}", parameterValuesForRemoteNode.keySet() );
 
         final RspList<RemoteExecuteBatchResult> responseList = new RspList<>();
         parameterValuesForRemoteNode.entrySet().parallelStream().forEach( target -> {
@@ -786,9 +1048,9 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         return statement.createBatchResultSet( remoteResults, origins -> {
             final Map<AbstractRemoteNode, Integer> originUpdateCountIndexMap = new HashMap<>();
 
-            final long[] updateCounts = new long[resultsMap.keySet().size()];
+            final long[] updateCounts = new long[mapToMergeTheUpdateCounts.keySet().size()];
             for ( int updateCountIndex = 0; updateCountIndex < updateCounts.length; ++updateCountIndex ) {
-                final AbstractRemoteNode origin = resultsMap.get( updateCountIndex );
+                final AbstractRemoteNode origin = mapToMergeTheUpdateCounts.get( updateCountIndex );
                 final int originUpdateCountIndex = originUpdateCountIndexMap.getOrDefault( origin, 0 );
 
                 updateCounts[updateCountIndex] = origins.get( origin ).toExecuteBatchResult().updateCounts[originUpdateCountIndex];
@@ -821,5 +1083,198 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     @Override
     public ReplicationProtocol setReplicationProtocol( ReplicationProtocol replicationProtocol ) {
         throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    private static class SqlDynamicParamsCounter extends SqlBasicVisitor<Integer> {
+
+        @Override
+        public Integer visit( SqlNodeList nodeList ) {
+            int numberOfParameters = 0;
+            for ( SqlNode node : nodeList ) {
+                numberOfParameters += node.accept( this );
+            }
+            return numberOfParameters;
+        }
+
+
+        @Override
+        public Integer visit( SqlCall call ) {
+            int numberOfParameters = 0;
+            for ( SqlNode node : call.getOperandList() ) {
+                numberOfParameters += node.accept( this );
+            }
+            return numberOfParameters;
+        }
+
+
+        @Override
+        public Integer visit( SqlDynamicParam param ) {
+            return 1;
+        }
+
+
+        @Override
+        public Integer visit( SqlLiteral literal ) {
+            return 0;
+        }
+
+
+        @Override
+        public Integer visit( SqlIdentifier id ) {
+            return 0;
+        }
+
+
+        @Override
+        public Integer visit( SqlDataTypeSpec type ) {
+            return 0;
+        }
+
+
+        @Override
+        public Integer visit( SqlIntervalQualifier intervalQualifier ) {
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+    }
+
+
+    private static class ColumnsNameToParametersIndexMapper extends SqlBasicVisitor<Map<String, Integer>> {
+
+        @Override
+        public Map<String, Integer> visit( SqlNodeList nodeList ) {
+            Map<String, Integer> m = new HashMap<>();
+            for ( SqlNode n : nodeList ) {
+                m.putAll( n.accept( this ) );
+            }
+            return m;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlCall call ) {
+            Map<String, Integer> m = new HashMap<>();
+            if ( call.isA( SqlKind.BINARY_COMPARISON ) ) {
+                if ( call.operand( 0 ).isA( EnumSet.of( SqlKind.IDENTIFIER ) ) && call.operand( 1 ).isA( EnumSet.of( SqlKind.DYNAMIC_PARAM ) ) ) {
+                    final SqlIdentifier column = call.<SqlIdentifier>operand( 0 );
+                    final int dynamicParameterIndex = call.<SqlDynamicParam>operand( 1 ).getIndex();
+                    if ( column.isSimple() ) {
+                        m.put( column.getSimple(), dynamicParameterIndex );
+                    } else {
+                        m.put( column.names.reverse().get( 0 ), dynamicParameterIndex );
+                    }
+                } else if ( call.operand( 0 ).isA( EnumSet.of( SqlKind.DYNAMIC_PARAM ) ) && call.operand( 1 ).isA( EnumSet.of( SqlKind.IDENTIFIER ) ) ) {
+                    final SqlIdentifier column = call.<SqlIdentifier>operand( 1 );
+                    final int dynamicParameterIndex = call.<SqlDynamicParam>operand( 0 ).getIndex();
+                    if ( column.isSimple() ) {
+                        m.put( column.getSimple(), dynamicParameterIndex );
+                    } else {
+                        m.put( column.names.reverse().get( 0 ), dynamicParameterIndex );
+                    }
+                } else {
+                    for ( SqlNode n : call.getOperandList() ) {
+                        if ( n != null ) {
+                            m.putAll( n.accept( this ) );
+                        }
+                    }
+                }
+            } else {
+                for ( SqlNode n : call.getOperandList() ) {
+                    if ( n != null ) {
+                        m.putAll( n.accept( this ) );
+                    }
+                }
+            }
+            return m;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlIdentifier id ) {
+            return Collections.EMPTY_MAP;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlLiteral literal ) {
+            return Collections.EMPTY_MAP;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlIntervalQualifier intervalQualifier ) {
+            return Collections.EMPTY_MAP;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlDataTypeSpec type ) {
+            return Collections.EMPTY_MAP;
+        }
+
+
+        @Override
+        public Map<String, Integer> visit( SqlDynamicParam param ) {
+            return Collections.EMPTY_MAP;
+        }
+    }
+
+
+    public static class HorizontalExecuteResultMergeFunction implements Function3<StatementInfos, Map<AbstractRemoteNode, RemoteExecuteResult>, Integer, ExecuteResult> {
+
+        @Override
+        public ExecuteResult apply( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteResult> origins, Integer maxRowsInFirstFrame ) {
+
+            // results merge
+            boolean done = true;
+            List<Long> updateCounts = new LinkedList<>();
+            List<Iterator<Object>> iterators = new LinkedList<>();
+            for ( RemoteExecuteResult rex : origins.values() ) {
+                for ( MetaResultSet rs : rex.toExecuteResult().resultSets ) {
+                    if ( rs.updateCount > -1L ) {
+                        updateCounts.add( rs.updateCount );
+                    } else {
+                        done &= rs.firstFrame.done;
+                        iterators.add( rs.firstFrame.rows.iterator() );
+                    }
+                }
+            }
+
+            if ( !updateCounts.isEmpty() && !iterators.isEmpty() ) {
+                throw new IllegalStateException( "Mixed update counts with actual results." );
+            }
+
+            if ( updateCounts.isEmpty() ) {
+                // Merge frames
+                List<Object> rows = new LinkedList<>();
+                boolean _continue;
+                do {
+                    _continue = false;
+                    for ( Iterator<Object> iterator : iterators ) {
+                        if ( iterator.hasNext() ) {
+                            rows.add( iterator.next() );
+                            _continue = true;
+                        }
+                    }
+                } while ( _continue );
+
+                if ( !done ) {
+                    ;
+                }
+
+                return new Meta.ExecuteResult( Collections.singletonList(
+                        MetaResultSet.create( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, false, statement.getStatementHandle().signature, Frame.create( 0, done, rows ) )
+                ) );
+            } else {
+                // Merge update counts
+                long mergedUpdateCount = 0;
+                for ( long updateCount : updateCounts ) {
+                    mergedUpdateCount += updateCount;
+                }
+                return new Meta.ExecuteResult( Collections.singletonList(
+                        MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, mergedUpdateCount )
+                ) );
+            }
+        }
     }
 }

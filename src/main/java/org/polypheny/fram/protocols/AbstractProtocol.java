@@ -78,7 +78,7 @@ public abstract class AbstractProtocol implements Protocol {
 
 
     protected Collection<AbstractRemoteNode> getAllNodes( final Cluster cluster ) {
-        return cluster.getAllMembers();
+        return cluster.getMembers();
     }
 
 

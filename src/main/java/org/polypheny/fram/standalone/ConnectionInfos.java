@@ -17,6 +17,7 @@
 package org.polypheny.fram.standalone;
 
 
+import io.vavr.Function1;
 import java.sql.Connection;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
@@ -35,7 +36,6 @@ import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.tools.Planner;
-import org.jooq.lambda.function.Function1;
 import org.polypheny.fram.Catalog;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;

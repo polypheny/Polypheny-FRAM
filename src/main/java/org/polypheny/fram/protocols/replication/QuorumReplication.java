@@ -73,7 +73,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
      */
     protected Collection<AbstractRemoteNode> getWriteQuorum( Cluster cluster ) {
         // THIS IS ROWA
-        return cluster.getAllMembers();
+        return cluster.getMembers();
     }
 
 

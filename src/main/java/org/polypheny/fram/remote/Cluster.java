@@ -403,7 +403,7 @@ public class Cluster implements MembershipListener {
     }
 
 
-    private <ReturnType> RspList<ReturnType> doCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<Address> remoteNodeAddresses ) throws RemoteException {
+    protected <ReturnType> RspList<ReturnType> doCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<Address> remoteNodeAddresses ) throws RemoteException {
         LOGGER.trace( "doCallMethods( requestOptions: {}, method: {}, remoteNodeAddresses: {} )", requestOptions, method, remoteNodeAddresses == null ? "<CLUSTER>" : remoteNodeAddresses.stream().map( Object::toString ).collect( Collectors.joining( "," ) ) );
 
         final RspList<ReturnType> result;
@@ -1003,10 +1003,13 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public Collection<AbstractRemoteNode> getAllMembers() {
-        synchronized ( this ) {
-            return this.currentNodes.values().stream().map( remoteNode -> (AbstractRemoteNode) remoteNode ).collect( Collectors.toList() );
-        }
+    public List<AbstractRemoteNode> getMembers() {
+        return Collections.unmodifiableList( this.currentView.getMembers().stream().map( address -> (AbstractRemoteNode) new RemoteNode( address, Cluster.this ) ).collect( Collectors.toList() ) );
+    }
+
+
+    public AbstractRemoteNode[] getMembersAsArray() {
+        return this.currentView.getMembers().stream().map( address -> (AbstractRemoteNode) new RemoteNode( address, Cluster.this ) ).toArray( AbstractRemoteNode[]::new );
     }
 
 
