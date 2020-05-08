@@ -126,7 +126,7 @@ public final class HSQLDB implements Store {
             storageDataSource = storage.getDataSource();
             storageXaDataSource = storageJdbcXaDataSource;
 
-            storeDialect = new SqlDialect( SqlDialect.EMPTY_CONTEXT.withDatabaseProduct( DatabaseProduct.HSQLDB ) );
+            storeDialect = new SqlDialect( SqlDialect.EMPTY_CONTEXT.withDatabaseProduct( DatabaseProduct.HSQLDB ).withIdentifierQuoteString( "\"" ) );
             sqlParserConfig = SqlParser.configBuilder().setParserFactory( SqlParserImpl.FACTORY ).setLex( Lex.MYSQL ).setCaseSensitive( false ).build();
             rel2sqlConverter = new JdbcImplementor( storeDialect, new JavaTypeFactoryImpl() );
 

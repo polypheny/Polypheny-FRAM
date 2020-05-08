@@ -23,6 +23,7 @@ import java.rmi.RemoteException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -37,7 +38,18 @@ import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
+import org.apache.calcite.schema.ColumnStrategy;
+import org.apache.calcite.sql.SqlBasicTypeNameSpec;
+import org.apache.calcite.sql.SqlDataTypeSpec;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
+import org.apache.calcite.sql.ddl.SqlCreateTable;
+import org.apache.calcite.sql.ddl.SqlDdlNodes;
+import org.apache.calcite.sql.dialect.AnsiSqlDialect;
+import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.jgroups.util.RspList;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.ReplicationProtocol;
@@ -136,7 +148,95 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+
+        switch ( sql.getKind() ) {
+            case CREATE_TABLE:
+                return prepareAndExecuteDataDefinitionCreateTable( connection, transaction, statement, (SqlCreateTable) sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+            case DROP_TABLE:
+                return super.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+        }
+
         throw new UnsupportedOperationException();
+    }
+
+
+    protected ResultSetInfos prepareAndExecuteDataDefinitionCreateTable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlCreateTable origin, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        final SqlNodeList originColumnList = origin.operand( 1 );
+        final List<SqlNode> columns = new LinkedList<>();
+        for ( SqlNode originColumnAsNode : originColumnList.getList() ) {
+            if ( !(originColumnAsNode instanceof SqlColumnDeclaration) ) {
+                continue; // e.g., table constraints
+            }
+            final SqlColumnDeclaration originColumn = (SqlColumnDeclaration) originColumnAsNode;
+            columns.add( originColumn );
+
+            final SqlParserPos originColumnPos = originColumn.getParserPosition();
+            final SqlIdentifier originColumnName = originColumn.operand( 0 );
+            final List<String> names = new LinkedList<>();
+            for ( Iterator<String> originColumnNamesIterator = originColumnName.names.iterator(); originColumnNamesIterator.hasNext(); ) {
+                String columnNamePart = originColumnNamesIterator.next();
+                if ( !originColumnNamesIterator.hasNext() ) {
+                    columnNamePart += "_$V";
+                }
+                names.add( columnNamePart );
+            }
+            final List<SqlParserPos> versionColumnNamesPositions = new LinkedList<>();
+            for ( int i = 0; i < originColumnName.names.size(); ++i ) {
+                SqlParserPos versionColumnNamePosition = originColumnName.getComponentParserPosition( i );
+                if ( i + 1 == originColumnName.names.size() ) {
+                    versionColumnNamePosition = versionColumnNamePosition.withQuoting( true );
+                }
+                versionColumnNamesPositions.add( versionColumnNamePosition );
+            }
+            final SqlIdentifier versionColumnName = (SqlIdentifier) originColumnName.clone( originColumnPos.withQuoting( true ) );
+            versionColumnName.setNames( names, versionColumnNamesPositions );
+
+            final SqlDataTypeSpec datatype = new SqlDataTypeSpec( new SqlBasicTypeNameSpec( SqlTypeName.BIGINT, originColumnPos ), originColumnPos );
+            final SqlNode expression = null;
+            final ColumnStrategy strategy = ColumnStrategy.NULLABLE;
+
+            columns.add( SqlDdlNodes.column( originColumnPos.withQuoting( true ), versionColumnName, datatype, expression, strategy ) );
+        }
+
+        final SqlParserPos pos = origin.getParserPosition();
+        final boolean replace = origin.getReplace();
+        final boolean ifNotExists = origin.toSqlString( AnsiSqlDialect.DEFAULT ).getSql().contains( "IF NOT EXISTS" ); // the only way to get the info without using reflection
+        final SqlIdentifier name = origin.operand( 0 );
+        final SqlNodeList columnList = new SqlNodeList( columns, originColumnList.getParserPosition() );
+        final SqlNode query = origin.operand( 2 );
+
+        final SqlCreateTable catalogSql = origin;
+        final SqlCreateTable storeSql = SqlDdlNodes.createTable( pos, replace, ifNotExists, name, columnList, query );
+
+        final Collection<AbstractRemoteNode> quorum = this.getAllNodes( connection.getCluster() );
+        LOGGER.trace( "prepareAndExecute[DataDefinition][CreateTable] on {}", quorum );
+
+        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, quorum );
+
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
+
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
+
+            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            } );
+        } );
+
+        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            try {
+                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+            } catch ( RemoteException e ) {
+                throw Utils.wrapException( e );
+            }
+        } );
     }
 
 
@@ -208,6 +308,10 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection );
         LOGGER.trace( "prepare[DataManipulation] on {}", quorum );
+
+        /*
+         TODO: Inserts: duplicate the amount of dynamic parameters ("?"), map the old ones to the new by applying index*2 (0->0, 1->2, 2->4, 3->6, ...)
+         */
 
         final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
         final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
