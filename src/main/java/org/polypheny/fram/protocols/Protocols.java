@@ -46,6 +46,7 @@ import org.polypheny.fram.standalone.TransactionInfos;
 public enum Protocols implements Protocol {
     PASS_THROUGH( new Passthrough() ),
     ROWA( QuorumReplication.ROWA ),
+    MAYORITY_QUORUM( QuorumReplication.MAJORITY ),
     HASH_FRAGMENTATION( new HorizontalHashFragmentation() ),
     ;
 

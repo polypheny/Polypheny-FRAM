@@ -85,10 +85,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getAllNodes( connection.getCluster() );
-
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
-        }
+        LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, quorum );
 
@@ -121,10 +118,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public ResultSetInfos prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
-
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute[TransactionCommit] on {}", accessedNodes );
-        }
+        LOGGER.trace( "prepareAndExecute[TransactionCommit] on {}", accessedNodes );
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
@@ -149,10 +143,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public ResultSetInfos prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
-
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute[TransactionRollback] on {}", accessedNodes );
-        }
+        LOGGER.trace( "prepareAndExecute[TransactionRollback] on {}", accessedNodes );
 
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, accessedNodes );
 
@@ -199,10 +190,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
         final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
-
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit on {}", accessedNodes );
-        }
+        LOGGER.trace( "commit on {}", accessedNodes );
 
         if ( transaction.requires2pc() ) {
             final AtomicReference<Boolean> prepareCommitResultHolder = new AtomicReference<>( Boolean.TRUE );
@@ -230,10 +218,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
         final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
-
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "rollback on {}", accessedNodes );
-        }
+        LOGGER.trace( "rollback on {}", accessedNodes );
 
         connection.getCluster().rollback( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ), RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), accessedNodes );
     }
