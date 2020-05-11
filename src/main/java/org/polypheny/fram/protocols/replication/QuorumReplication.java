@@ -29,8 +29,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.Frame;
+import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
@@ -42,6 +44,7 @@ import org.apache.calcite.schema.ColumnStrategy;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
@@ -306,12 +309,24 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        LOGGER.trace( "prepareDataManipulation( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
+        switch ( sql.getKind() ) {
+            // See org.apache.calcite.sql.SqlKind.DML
+            case INSERT:
+                return prepareDataManipulationInsert( connection, statement, (SqlInsert) sql, maxRowCount );
+
+            case DELETE:
+            case UPDATE:
+                break;
+
+            case MERGE:
+            case PROCEDURE_CALL:
+            default:
+                throw new UnsupportedOperationException( "Not supported" );
+        }
+
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection );
         LOGGER.trace( "prepare[DataManipulation] on {}", quorum );
-
-        /*
-         TODO: Inserts: duplicate the amount of dynamic parameters ("?"), map the old ones to the new by applying index*2 (0->0, 1->2, 2->4, 3->6, ...)
-         */
 
         final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
         final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
@@ -332,6 +347,81 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             return remoteStatements.values().iterator().next().toStatementHandle().signature;
             // END HACK
         } );
+    }
+
+
+    protected StatementInfos prepareDataManipulationInsert( ConnectionInfos connection, StatementInfos statement, SqlInsert sql, long maxRowCount ) throws RemoteException {
+        LOGGER.trace( "prepareDataManipulationInsert( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
+
+        final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
+        final SqlNodeList targetColumns = sql.getTargetColumnList();
+        if ( targetColumns == null || targetColumns.size() == 0 ) {
+            /*
+                TODO: Inserts: duplicate the amount of dynamic parameters ("?"), map the old ones to the new by applying index*2 (0->0, 1->2, 2->4, 3->6, ...)
+             */
+            List<SqlNode> columnList = this.lookupColumnsNames( connection, table );
+            SqlNodeList targetColumnList = new SqlNodeList( columnList, SqlParserPos.ZERO );
+            sql.setOperand( 3, targetColumnList );
+        }
+
+        final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection );
+        LOGGER.trace( "prepare[DataManipulation][Insert] on {}", quorum );
+
+        final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
+        final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
+
+        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
+            if ( remoteStatementHandleRsp.hasException() ) {
+                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+            }
+            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+
+            preparedStatements.put( currentRemote, remoteStatementHandleRsp.getValue() );
+
+            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
+        } );
+
+        return connection.createPreparedStatement( statement, preparedStatements, remoteStatements -> {
+            // BEGIN HACK
+            return remoteStatements.values().iterator().next().toStatementHandle().signature;
+            // END HACK
+        } );
+    }
+
+
+    protected List<SqlNode> lookupColumnsNames( ConnectionInfos connection, SqlIdentifier table ) {
+        final String catalogName;
+        final String schemaName;
+        final String tableName;
+        switch ( table.names.size() ) {
+            case 3:
+                catalogName = table.names.get( 0 );
+                schemaName = table.names.get( 1 );
+                tableName = table.names.get( 2 );
+                break;
+            case 2:
+                catalogName = null;
+                schemaName = table.names.get( 0 );
+                tableName = table.names.get( 1 );
+                break;
+            case 1:
+                catalogName = null;
+                schemaName = null;
+                tableName = table.names.get( 0 );
+                break;
+            default:
+                throw new RuntimeException( "Something went terrible wrong here..." );
+        }
+
+        final MetaResultSet columnInfos = connection.getCatalog().getColumns( connection, catalogName, Meta.Pat.of( schemaName ), Meta.Pat.of( tableName ), Meta.Pat.of( null ) );
+        final List<SqlNode> columnsNames = new LinkedList<>();
+        for ( Object row : columnInfos.firstFrame.rows ) {
+            Object[] cells = (Object[]) row;
+            final int columnIndex = (int) cells[16] - 1; // convert ordinal to index
+            final String columnName = (String) cells[3];
+            columnsNames.add( new SqlIdentifier( columnName, SqlParserPos.QUOTED_ZERO ) );
+        }
+        return columnsNames;
     }
 
 
