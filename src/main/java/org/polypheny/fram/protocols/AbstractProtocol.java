@@ -21,6 +21,7 @@ import java.rmi.RemoteException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
@@ -31,6 +32,7 @@ import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.proto.Common;
 import org.apache.calcite.sql.SqlNode;
+import org.jgroups.Address;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
 import org.polypheny.fram.remote.AbstractRemoteNode;
@@ -91,19 +93,20 @@ public abstract class AbstractProtocol implements Protocol {
 
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
 
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+        for ( final Entry<Address, Rsp<RemoteExecuteResult>> responseEntry : responseList.entrySet() ) {
+            final AbstractRemoteNode remoteNode = connection.getCluster().getRemoteNode( responseEntry.getKey() );
+            final Rsp<RemoteExecuteResult> response = responseEntry.getValue();
+
+            if ( response.hasException() ) {
+                throw new RemoteException( "Exception at " + remoteNode + " occurred.", response.getException() );
             }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
 
-            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
-
-            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
+            remoteResults.put( remoteNode, response.getValue() );
+            response.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
+                connection.addAccessedNode( remoteNode, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
+                statement.addAccessedNode( remoteNode, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
             } );
-        } );
+        }
 
         return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
