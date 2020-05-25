@@ -177,7 +177,7 @@ public abstract class AbstractProtocol implements Protocol {
         final RspList<Common.ConnectionProperties> responses = connection.getCluster().connectionSync( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ), newConnectionProperties.toProto(), nodesWhichHaveOpenConnections );
         for ( Rsp<Common.ConnectionProperties> response : responses ) {
             if ( response.hasException() ) {
-                // TODO: Check for errors, etc.
+                // todo: Check for errors, etc.
             }
         }
         return newConnectionProperties;
