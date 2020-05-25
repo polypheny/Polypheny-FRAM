@@ -151,16 +151,16 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-
         switch ( sql.getKind() ) {
             case CREATE_TABLE:
                 return prepareAndExecuteDataDefinitionCreateTable( connection, transaction, statement, (SqlCreateTable) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             case DROP_TABLE:
                 return super.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-        }
 
-        throw new UnsupportedOperationException();
+            default:
+                throw new UnsupportedOperationException();
+        }
     }
 
 
@@ -357,7 +357,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         final SqlNodeList targetColumns = sql.getTargetColumnList();
         if ( targetColumns == null || targetColumns.size() == 0 ) {
             /*
-                TODO: Inserts: duplicate the amount of dynamic parameters ("?"), map the old ones to the new by applying index*2 (0->0, 1->2, 2->4, 3->6, ...)
+                todo: Inserts: duplicate the amount of dynamic parameters ("?"), map the old ones to the new by applying index*2 (0->0, 1->2, 2->4, 3->6, ...)
              */
             List<SqlNode> columnList = this.lookupColumnsNames( connection, table );
             SqlNodeList targetColumnList = new SqlNodeList( columnList, SqlParserPos.ZERO );

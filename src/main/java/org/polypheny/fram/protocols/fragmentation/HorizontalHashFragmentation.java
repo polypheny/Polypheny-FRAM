@@ -299,8 +299,10 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 switch ( call.getKind() ) {
                     case AS:
                         return call.operand( 0 );
+
+                    default:
+                        return super.visit( call );
                 }
-                return super.visit( call );
             }
         } );
 
@@ -856,8 +858,10 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 switch ( call.getKind() ) {
                     case AS:
                         return call.operand( 0 );
+
+                    default:
+                        return super.visit( call );
                 }
-                return super.visit( call );
             }
         } );
 
@@ -897,7 +901,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             // END HACK
         } );
 
-        // TODO: improve. Only the primary keys are relevant
+        // todo: improve. Only the primary keys are relevant
         if ( sql.getWhere().accept( new SqlBasicVisitor<Boolean>() {
             @Override
             public Boolean visit( SqlCall call ) {
@@ -1293,7 +1297,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 } while ( _continue );
 
                 if ( !done ) {
-                    ;
+                    LOGGER.trace( "The merge of the frames did not finish." );
                 }
 
                 return new Meta.ExecuteResult( Collections.singletonList(

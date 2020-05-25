@@ -285,7 +285,7 @@ public class Cluster implements MembershipListener {
 
 
     private void notifyNewView( final View newView ) {
-        // TODO: DataDistributionUnitFrontend.getInstance().viewAccepted( this, newView );
+        // todo: DataDistributionUnitFrontend.getInstance().viewAccepted( this, newView );
     }
 
 

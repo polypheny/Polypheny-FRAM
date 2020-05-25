@@ -976,7 +976,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
             LOGGER.trace( "Closing statement {}", statementHandle );
         }
 
-        // TODO: close remote statements and result sets
+        // todo: close remote statements and result sets
         //throw new UnsupportedOperationException( "Not supported yet." );
 
         try {
@@ -1013,7 +1013,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
                 throw new ConnectionAlreadyExistsException( connectionHandle.id );
             }
 
-            // TODO: check user-password
+            // todo: check user-password
             final String username = info == null ? ANONYMOUS_USERNAME : info.getOrDefault( "user", ANONYMOUS_USERNAME );
             UUID userId = null;
             if ( username == null ) {
@@ -1218,7 +1218,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     protected void applyConnectionSettings( ConnectionHandle connectionHandle, ConnectionProperties properties ) {
         LOGGER.trace( "applyConnectionSettings( connectionHandle: {}, properties: {}", connectionHandle, properties );
 
-        // TODO: apply on all "sub-connections"
+        // todo: apply on all "sub-connections"
         if ( properties.isAutoCommit() != null ) {
             LOGGER.trace( "applyConnectionSettings() -- New value for AutoCommit: {}", properties.isAutoCommit() );
         }

@@ -125,7 +125,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         // Avoid global synchronization of connection opening
         try {
             LOGGER.trace( "opening new XAConnection" );
-            // TODO: check if info.user = settings.user --- if not, then use getXAConnection( String, String )
+            // todo: check if info.user = settings.user --- if not, then use getXAConnection( String, String )
             XAConnection xaConnection = xaDataSource.getXAConnection( /*fullInfo.getProperty( "user", "SA" ), fullInfo.getProperty( "password", "" )*/ );
             XAConnection loadedXaConnection = xaConnectionCacheAsMap.putIfAbsent( connectionHandle.id, xaConnection );
             // Race condition: someone beat us to storing the connection in the cache.

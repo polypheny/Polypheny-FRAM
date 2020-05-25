@@ -272,7 +272,7 @@ class LocalNode extends AbstractLocalNode {
             final ExecuteResult executeResult = xaMeta.execute( statement.getStatementHandle(), deserializedParameterValues, maxRowsInFirstFrame );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
@@ -322,7 +322,7 @@ class LocalNode extends AbstractLocalNode {
             final ExecuteBatchResult executeBatchResult = xaMeta.executeBatch( statement.getStatementHandle(), deserializedParameterValues );
             result = RemoteExecuteBatchResult.fromExecuteBatchResult( executeBatchResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
@@ -348,7 +348,7 @@ class LocalNode extends AbstractLocalNode {
             final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
@@ -376,7 +376,7 @@ class LocalNode extends AbstractLocalNode {
             final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), localStoreSql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
@@ -400,7 +400,7 @@ class LocalNode extends AbstractLocalNode {
             final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
             result = RemoteExecuteBatchResult.fromExecuteBatchResult( xaMeta.prepareAndExecuteBatch( statement.getStatementHandle(), sqlCommands ) );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
