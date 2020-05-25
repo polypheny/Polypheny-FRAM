@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.remote;
 
 
-/**
- *
- */
-public abstract class AbstractCatalog implements Catalog {
+import org.jgroups.Address;
 
+
+public abstract class AbstractNode implements RemoteMeta {
+
+    public AbstractNode() {
+        super();
+    }
+
+
+    public abstract Address getNodeAddress();
 }

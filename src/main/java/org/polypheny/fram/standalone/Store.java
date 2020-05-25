@@ -14,12 +14,30 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.standalone;
 
 
-/**
- *
- */
-public abstract class AbstractCatalog implements Catalog {
+import javax.sql.DataSource;
+import org.apache.calcite.adapter.jdbc.JdbcImplementor;
+import org.apache.calcite.sql.SqlDialect;
+import org.apache.calcite.sql.parser.SqlParser.Config;
 
+
+public interface Store {
+
+    XAMeta getCatalogAsXAMeta();
+
+    DataSource getCatalogDataSource();
+
+    XAMeta getStorageAsXAMeta();
+
+    DataSource getStorageDataSource();
+
+    SqlDialect getStoreDialect();
+
+    Config getSqlParserConfig();
+
+    JdbcImplementor getRelToSqlConverter();
+
+    String getStorageJdbcConnectionUrl();
 }

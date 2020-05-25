@@ -17,32 +17,27 @@
 package org.polypheny.fram;
 
 
+import java.util.UUID;
 import org.polypheny.fram.remote.AbstractLocalNode;
 import org.polypheny.fram.remote.Cluster;
-import org.polypheny.fram.remote.RemoteNode;
-import java.util.UUID;
 
 
 /**
  *
  */
-public abstract class AbstractDataDistributionUnit {
+public abstract class AbstractDistributionMeta {
 
 
+    protected final AbstractLocalNode store;
+    protected final Catalog catalog;
     public final UUID nodeId;
 
-    protected final AbstractLocalNode localNode;
 
-    protected final Cluster defaultCluster;
-    protected final RemoteNode thisNode;
+    public AbstractDistributionMeta( final AbstractLocalNode localNode ) {
+        this.store = localNode;
+        this.catalog = localNode.getCatalog();
+        this.nodeId = this.catalog.getNodeId();
 
-
-    public AbstractDataDistributionUnit( final AbstractLocalNode localNode ) {
-        this.localNode = localNode;
-
-        this.defaultCluster = Cluster.getDefaultCluster().connect( this.localNode );
-        this.thisNode = this.defaultCluster.thisNode();
-
-        this.nodeId = localNode.getCatalog().getNodeId();
+        Cluster.getDefaultCluster().connect( localNode );
     }
 }

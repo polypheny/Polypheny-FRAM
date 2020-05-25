@@ -17,13 +17,6 @@
 package org.polypheny.fram;
 
 
-import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteFrame;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.List;
@@ -36,12 +29,19 @@ import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.parser.SqlParser.Config;
+import org.polypheny.fram.remote.AbstractLocalNode;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteFrame;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 
 
 /**
  *
  */
-class PolyNode extends AbstractLocalNode {
+class PolyphenyDbNode extends AbstractLocalNode {
 
 
     @Override
@@ -58,6 +58,12 @@ class PolyNode extends AbstractLocalNode {
 
     @Override
     public RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
         return null;
     }
 
@@ -159,14 +165,14 @@ class PolyNode extends AbstractLocalNode {
 
 
     @Override
-    public AbstractCatalog getCatalog() {
-        return PolyCatalog.getInstance();
+    public Catalog getCatalog() {
+        return null;
     }
 
 
     private static class SingletonHolder {
 
-        private static PolyNode INSTANCE = new PolyNode();
+        private static PolyphenyDbNode INSTANCE = new PolyphenyDbNode();
 
 
         private SingletonHolder() {
@@ -174,7 +180,7 @@ class PolyNode extends AbstractLocalNode {
     }
 
 
-    static PolyNode getInstance() {
+    static PolyphenyDbNode getInstance() {
         return SingletonHolder.INSTANCE;
     }
 }

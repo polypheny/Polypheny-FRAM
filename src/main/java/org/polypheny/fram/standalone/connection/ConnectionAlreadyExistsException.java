@@ -14,34 +14,20 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.standalone.connection;
 
 
-import java.util.UUID;
+public class ConnectionAlreadyExistsException extends RuntimeException {
+
+    private final String connectionId;
 
 
-/**
- *
- */
-class PolyCatalog extends AbstractCatalog {
-
-    @Override
-    public UUID getNodeId() {
-        throw new UnsupportedOperationException( "Not implemented yet." );
+    public ConnectionAlreadyExistsException( String connectionId ) {
+        this.connectionId = connectionId;
     }
 
 
-    private static class SingletonHolder {
-
-        private static PolyCatalog INSTANCE = new PolyCatalog();
-
-
-        private SingletonHolder() {
-        }
-    }
-
-
-    static PolyCatalog getInstance() {
-        return SingletonHolder.INSTANCE;
+    public String getConnectionId() {
+        return connectionId;
     }
 }

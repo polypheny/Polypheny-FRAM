@@ -24,10 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
-import javax.sql.XADataSource;
 import javax.transaction.xa.XAException;
 import org.apache.calcite.adapter.jdbc.JdbcImplementor;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
@@ -40,72 +37,62 @@ import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.NoSuchConnectionException;
 import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.jdbc.JdbcMeta.ConnectionCacheSettings;
-import org.apache.calcite.avatica.jdbc.JdbcMeta.StatementCacheSettings;
 import org.apache.calcite.avatica.proto.Common;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.avatica.remote.TypedValue;
-import org.apache.calcite.config.Lex;
-import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.sql.SqlDialect;
-import org.apache.calcite.sql.SqlDialect.DatabaseProduct;
-import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParser.Config;
-import org.polypheny.fram.AbstractCatalog;
+import org.polypheny.fram.Catalog;
 import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.RemoteMeta;
-import org.polypheny.fram.remote.RemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import org.polypheny.fram.standalone.parser.SqlParserImpl;
+import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 /**
  * This is the local Node.
- *
- * {@link DataDistributionUnitMeta} uses {@link RemoteNode} which is the remote representation of instances of this class.
+ * <p>
  * This class uses {@link JdbcXAMeta} to access the underlying Database.
  */
-class SimpleNode extends AbstractLocalNode implements RemoteMeta {
+class LocalNode extends AbstractLocalNode {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger( SimpleNode.class );
+    private static final Logger LOGGER = LoggerFactory.getLogger( LocalNode.class );
 
     private final XAMeta xaMeta;
     private final DataSource dataSource;
-    private final XADataSource xaDataSource;
 
     private final Map<String, ConnectionInfos> remoteToLocalConnectionMap = new HashMap<>();
     private final Map<String, StatementInfos> remoteToLocalStatementMap = new HashMap<>();
+    private final Map<ConnectionHandle, TransactionHandle> openTransactionsMap = new HashMap<>();
 
 
-    private SimpleNode() {
-        this.xaMeta = DatabaseHolder.storage;
-        this.dataSource = DatabaseHolder.storageDataSource;
-        this.xaDataSource = DatabaseHolder.storageXaDataSource;
+    private LocalNode() {
+        this.xaMeta = DataStore.getStorage();
+        this.dataSource = DataStore.getStorageDataSource();
     }
 
 
     @Override
     public Config getSqlParserConfig() {
-        return DatabaseHolder.sqlParserConfig;
+        return DataStore.getStorageParserConfig();
     }
 
 
     @Override
     public JdbcImplementor getRelToSqlConverter() {
-        return DatabaseHolder.rel2sqlConverter;
+        return DataStore.getRelToSqlConverter();
     }
 
 
     @Override
     public SqlDialect getSqlDialect() {
-        return DatabaseHolder.storageDialect;
+        return DataStore.getStorageDialect();
     }
 
 
@@ -116,8 +103,8 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
 
     @Override
-    public AbstractCatalog getCatalog() {
-        return SimpleCatalog.getInstance();
+    public Catalog getCatalog() {
+        return GlobalCatalog.getInstance();
     }
 
 
@@ -126,7 +113,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             return remoteToLocalConnectionMap.computeIfAbsent( connectionHandle.id, cid -> {
                 // this is an unknown connection
                 // its first occurrence creates a new connection here to represent the original connection
-                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( cid ), SimpleNode.this.getSqlParserConfig(), SimpleNode.this.getDataSource() );
+                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( cid ) );
                 xaMeta.openConnection( localConnection.getConnectionHandle(), null );
                 return localConnection;
             } );
@@ -222,15 +209,22 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     @Override
     public Map<Common.DatabaseProperty, Serializable> getDatabaseProperties( RemoteConnectionHandle remoteConnectionHandle ) throws RemoteException {
-        return null;
+        LOGGER.trace( "getDatabaseProperties( remoteConnectionHandle: {} )", remoteConnectionHandle );
+
+        final Map<Common.DatabaseProperty, Serializable> result = new HashMap<>();
+
+        final ConnectionInfos connection = getOrOpenConnection( remoteConnectionHandle.toConnectionHandle() );
+        xaMeta.getDatabaseProperties( connection.getConnectionHandle() )
+                .forEach( ( databaseProperty, value ) -> result.put( databaseProperty.toProto(), (Serializable) value ) );
+
+        LOGGER.trace( "getDatabaseProperties( remoteConnectionHandle: {} ) = {}", remoteConnectionHandle, result );
+        return result;
     }
 
 
     @Override
     public RemoteStatementHandle prepare( final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} )", remoteStatementHandle, sql, maxRowCount );
-        }
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} )", remoteStatementHandle, sql, maxRowCount );
 
         final StatementHandle result;
         try {
@@ -254,18 +248,14 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} ) = {}", remoteStatementHandle, sql, maxRowCount, result );
-        }
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} ) = {}", remoteStatementHandle, sql, maxRowCount, result );
         return RemoteStatementHandle.fromStatementHandle( result );
     }
 
 
     @Override
     public RemoteExecuteResult execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
-        }
+        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
 
         final RemoteExecuteResult result;
         try {
@@ -282,24 +272,20 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             final ExecuteResult executeResult = xaMeta.execute( statement.getStatementHandle(), deserializedParameterValues, maxRowsInFirstFrame );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, result );
-        }
+        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, result );
         return result;
     }
 
 
     @Override
     public Void closeStatement( RemoteStatementHandle remoteStatementHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "closeStatement( remoteStatementHandle: {} )", remoteStatementHandle );
-        }
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {} )", remoteStatementHandle );
 
         synchronized ( remoteToLocalStatementMap ) {
             remoteToLocalStatementMap.computeIfPresent( remoteStatementHandle.toStatementHandle().toString(), ( statementHandle, statement ) -> {
@@ -308,19 +294,14 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             } );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "closeStatement( remoteStatementHandle: {} ) = {}", remoteStatementHandle, "<VOID>" );
-        }
-
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {} ) = {}", remoteStatementHandle, "<VOID>" );
         return VOID;
     }
 
 
     @Override
     public RemoteExecuteBatchResult executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues );
-        }
+        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues );
 
         final RemoteExecuteBatchResult result;
         try {
@@ -341,24 +322,20 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             final ExecuteBatchResult executeBatchResult = xaMeta.executeBatch( statement.getStatementHandle(), deserializedParameterValues );
             result = RemoteExecuteBatchResult.fromExecuteBatchResult( executeBatchResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, result );
-        }
+        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-        }
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
 
         final RemoteExecuteResult result;
         try {
@@ -366,34 +343,54 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
 
             final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
-            }
+            LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
 
             final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
-            if ( LOGGER.isDebugEnabled() ) {
-                LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
-            }
+            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
+
+        final RemoteExecuteResult result;
+        try {
+            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
+            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
+
+            final ExecuteResult catalogExecuteResult = this.getCatalog().prepareAndExecuteDataDefinition( remoteTransactionHandle.toTransactionHandle(), remoteStatementHandle.toStatementHandle(), globalCatalogSql, maxRowCount, maxRowsInFirstFrame );
+
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            LOGGER.debug( "executing xaMeta.prepareAndExecuteDataDefinition( ... ) in the context of {}", transaction );
+            final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), localStoreSql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
+            result = RemoteExecuteResult.fromExecuteResult( executeResult );
+
+            // todo: Do we need to take action if the connection is set on AutoCommit?
+
+        } catch ( Exception ex ) {
+            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
+            throw new RemoteException( ex.getMessage(), ex );
         }
+
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame, result );
         return result;
     }
 
 
     @Override
     public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands );
-        }
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands );
 
         final RemoteExecuteBatchResult result;
         try {
@@ -403,15 +400,13 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
             final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
             result = RemoteExecuteBatchResult.fromExecuteBatchResult( xaMeta.prepareAndExecuteBatch( statement.getStatementHandle(), sqlCommands ) );
 
-            // TODO: Do we need to take action if the connection is set on AutoCommit?
+            // todo: Do we need to take action if the connection is set on AutoCommit?
 
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
-        }
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
         return result;
     }
 
@@ -430,9 +425,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     @Override
     public Void abortConnection( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
         throw new RemoteException( "UnsupportedOperation", new UnsupportedOperationException( "xaMeta.abortConnection( remoteConnectionHandle.toConnectionHandle() ) not supported yet." ) );
     }
@@ -440,16 +433,16 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     @Override
     public Void onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
         if ( remoteTransactionHandle == null || remoteTransactionHandle.toTransactionHandle() == null ) {
             // legacy method
             LOGGER.warn( "Calling legacy commit() for connection {} and transaction {}", remoteConnectionHandle, remoteTransactionHandle );
+            this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle() );
             xaMeta.commit( remoteConnectionHandle.toConnectionHandle() );
         } else {
             try {
+                this.getCatalog().onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
                 xaMeta.onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
             } catch ( XAException ex ) {
                 throw new RemoteException( ex.getMessage(), ex );
@@ -462,34 +455,30 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     @Override
     public boolean prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
-        final boolean result;
+        boolean result = true;
         try {
-            result = xaMeta.prepareCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
+            result &= this.getCatalog().prepareCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
+            result &= xaMeta.prepareCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
         } catch ( XAException ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, result );
-        }
+        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, result );
         return result;
     }
 
 
     @Override
     public Void commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
         if ( remoteTransactionHandle == null || remoteTransactionHandle.toTransactionHandle() == null ) {
             throw new RemoteException( "Cannot perform 2PC commit without a transaction handle." );
         } else {
             try {
+                this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
                 xaMeta.commit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
             } catch ( XAException ex ) {
                 throw new RemoteException( ex.getMessage(), ex );
@@ -502,14 +491,14 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     @Override
     public Void rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
-        if ( LOGGER.isTraceEnabled() ) {
-            LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
-        }
+        LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
         if ( remoteTransactionHandle == null || remoteTransactionHandle.toTransactionHandle() == null ) {
+            this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle() );
             xaMeta.rollback( remoteConnectionHandle.toConnectionHandle() );
         } else {
             try {
+                this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
                 xaMeta.rollback( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
             } catch ( NoSuchConnectionException | XAException ex ) {
                 throw new RemoteException( ex.getMessage(), ex );
@@ -520,94 +509,10 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
     }
 
 
-    /**
-     *
-     */
-    static class DatabaseHolder {
-
-        static final JdbcXAMeta storage;
-        static final DataSource storageDataSource;
-        static final XADataSource storageXaDataSource;
-
-        static final SqlDialect storageDialect;
-        static final Config sqlParserConfig;
-        static final JdbcImplementor rel2sqlConverter;
-
-        static final String jdbcConnectionUrl;
-        static final String catalogJdbcConnectionUrl;
-
-
-        static {
-            final com.typesafe.config.Config configuration = Main.configuration();
-
-            org.hsqldb.Server hsqldbServer = new org.hsqldb.Server();
-            hsqldbServer.setAddress( configuration.getString( "standalone.datastore.jdbc.listens" ) );
-            hsqldbServer.setPort( configuration.getInt( "standalone.datastore.jdbc.port" ) );
-            hsqldbServer.setDaemon( true );
-            hsqldbServer.setDatabaseName( 0, configuration.getString( "standalone.datastore.catalog.name" ) );
-            hsqldbServer.setDatabasePath( 0, "mem:" + configuration.getString( "standalone.datastore.catalog.name" ) );
-            hsqldbServer.setDatabaseName( 1, configuration.getString( "standalone.datastore.database.name" ) );
-            hsqldbServer.setDatabasePath( 1, "mem:" + configuration.getString( "standalone.datastore.database.name" ) );
-            hsqldbServer.setLogWriter( null );
-            hsqldbServer.setErrWriter( null );
-            hsqldbServer.setSilent( true );
-            hsqldbServer.setNoSystemExit( true );
-
-            Runtime.getRuntime().addShutdownHook( new Thread( () -> {
-                if ( hsqldbServer != null ) {
-                    hsqldbServer.shutdown();
-                }
-            }, "HSQLDB ShutdownHook" ) );
-
-            hsqldbServer.start();
-
-            try {
-                Properties cacheSettings = new Properties();
-                cacheSettings.put( ConnectionCacheSettings.EXPIRY_UNIT.key(), TimeUnit.HOURS.name() );
-                cacheSettings.put( StatementCacheSettings.EXPIRY_UNIT.key(), TimeUnit.HOURS.name() );
-
-                catalogJdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.catalog.name" )
-                        + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
-                        + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
-                        + ";close_result=true";
-
-                if ( configuration.hasPath( "standalone.datastore.connection.url" ) ) {
-                    jdbcConnectionUrl = configuration.getString( "standalone.datastore.connection.url" );
-                } else {
-                    jdbcConnectionUrl = "jdbc:hsqldb:hsql://" + "127.0.0.1" + ":" + configuration.getInt( "standalone.datastore.jdbc.port" ) + "/" + configuration.getString( "standalone.datastore.database.name" )
-                            + ";hsqldb.tx=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx" )
-                            + ";hsqldb.tx_level=" + configuration.getString( "standalone.datastore.connection.hsqldb.tx_level" )
-                            + ";close_result=true";
-                }
-
-                org.hsqldb.jdbc.pool.JDBCXADataSource storageJdbcXaDataSource = new org.hsqldb.jdbc.pool.JDBCXADataSource();
-                storageJdbcXaDataSource.setDatabase( jdbcConnectionUrl );
-                storageJdbcXaDataSource.setUser( configuration.getString( "standalone.datastore.connection.user" ) );
-                storageJdbcXaDataSource.setPassword( configuration.getString( "standalone.datastore.connection.password" ) );
-
-                storage = new JdbcXAMeta( storageJdbcXaDataSource, new Properties( cacheSettings ) );
-                storageDataSource = storage.getDataSource();
-                storageXaDataSource = storageJdbcXaDataSource;
-                storageDialect = new SqlDialect( SqlDialect.EMPTY_CONTEXT.withDatabaseProduct( DatabaseProduct.HSQLDB ) );
-
-                sqlParserConfig = SqlParser.configBuilder().setParserFactory( SqlParserImpl.FACTORY ).setLex( Lex.MYSQL ).setCaseSensitive( false ).build();
-                rel2sqlConverter = new JdbcImplementor( storageDialect, new JavaTypeFactoryImpl() );
-
-            } catch ( SQLException ex ) {
-                throw new RuntimeException( ex );
-            }
-        }
-
-
-        private DatabaseHolder() {
-        }
-    }
-
-
     private static final PrepareCallback NOOP_PREPARE_CALLBACK = new PrepareCallback() {
         @Override
         public Object getMonitor() {
-            return SimpleNode.class;
+            return LocalNode.class;
         }
 
 
@@ -629,7 +534,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
 
     private static class SingletonHolder {
 
-        private static final SimpleNode INSTANCE = new SimpleNode();
+        private static final LocalNode INSTANCE = new LocalNode();
 
 
         private SingletonHolder() {
@@ -640,7 +545,7 @@ class SimpleNode extends AbstractLocalNode implements RemoteMeta {
     private static final Void VOID = null;
 
 
-    static SimpleNode getInstance() {
+    public static LocalNode getInstance() {
         return SingletonHolder.INSTANCE;
     }
 }

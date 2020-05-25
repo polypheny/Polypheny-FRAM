@@ -17,34 +17,31 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.remote.RemoteNode;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import io.vavr.Function1;
 import java.sql.Connection;
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.sql.DataSource;
 import lombok.EqualsAndHashCode;
-import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.plan.Contexts;
-import org.apache.calcite.plan.ConventionTraitDef;
-import org.apache.calcite.rel.RelCollationTraitDef;
-import org.apache.calcite.rel.type.RelDataTypeSystem;
-import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.sql.parser.SqlParser;
-import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
-import org.apache.calcite.tools.RuleSets;
+import org.polypheny.fram.Catalog;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.remote.types.RemoteConnectionHandle;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,8 +63,6 @@ public class ConnectionInfos {
     final UUID nodeId;
     final UUID userId;
     private final ConnectionHandle connectionHandle;
-    private final SqlParser.Config parserConfig;
-    private final DataSource schemaDataSource;
 
     private final ConnectionPropertiesImpl connectionProperties;
     private volatile boolean isDirty = false;
@@ -77,23 +72,24 @@ public class ConnectionInfos {
     @EqualsAndHashCode.Include
     final UUID connectionId;
 
-    private final Set<RemoteNode> accessedNodes = new HashSet<>();
+    private final Map<AbstractRemoteNode, RemoteConnectionHandle> remoteConnections = new LinkedHashMap<>();
+    private final Map<RemoteConnectionHandle, Set<AbstractRemoteNode>> remoteNodes = new LinkedHashMap<>();
 
+    private Catalog catalog;
+    private Cluster cluster;
     private TransactionInfos currentTransaction;
     private Planner planner;
 
 
-    public ConnectionInfos( final ConnectionHandle ch, final SqlParser.Config sqlParserConfig, final DataSource dataSource ) {
-        this( null, null, ch, sqlParserConfig, dataSource );
+    public ConnectionInfos( final ConnectionHandle ch ) {
+        this( null, null, ch );
     }
 
 
-    public ConnectionInfos( final UUID nodeId, final UUID userId, final ConnectionHandle ch, final SqlParser.Config parserConfig, final DataSource schemaDataSource ) {
+    public ConnectionInfos( final UUID nodeId, final UUID userId, final ConnectionHandle ch ) {
         this.nodeId = nodeId;
         this.userId = userId;
         this.connectionHandle = ch;
-        this.parserConfig = parserConfig;
-        this.schemaDataSource = schemaDataSource;
 
         this.connectionProperties = new ConnectionPropertiesImpl();
         this.statementIdGenerator.set( 0 );
@@ -106,6 +102,9 @@ public class ConnectionInfos {
         } finally {
             this.connectionId = connectionId;
         }
+
+        this.catalog = GlobalCatalog.getInstance();
+        this.cluster = Cluster.getDefaultCluster();
     }
 
 
@@ -146,19 +145,29 @@ public class ConnectionInfos {
     }
 
 
-    public StatementInfos createPreparedStatement( final Signature signature ) {
-        return new StatementInfos( this, new StatementHandle( this.connectionHandle.id, getNextStatementId(), signature ) );
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
+        return statement.new PreparedStatementInfos( remoteNode, remoteStatement );
     }
 
 
-    public StatementInfos createPreparedStatement( StatementInfos statement, List<Entry<RemoteNode, RemoteStatementHandle>> remoteStatements, Collection<RemoteNode> quorum ) {
-        return statement.toPreparedStatement( remoteStatements, quorum );
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction ) {
+        return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction );
     }
 
 
     /*
      *
      */
+
+
+    public Catalog getCatalog() {
+        return this.catalog;
+    }
+
+
+    public Cluster getCluster() {
+        return this.cluster;
+    }
 
 
     public synchronized TransactionInfos getOrStartTransaction() {
@@ -197,13 +206,39 @@ public class ConnectionInfos {
     }
 
 
-    public void addAccessedNodes( final Collection<RemoteNode> nodes ) {
-        this.accessedNodes.addAll( nodes );
+    public void addAccessedNode( final AbstractRemoteNode node, RemoteConnectionHandle remoteConnection ) {
+        this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( node, remoteConnection ) ) );
     }
 
 
-    public Collection<RemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( accessedNodes );
+    public void addAccessedNode( final Entry<AbstractRemoteNode, RemoteConnectionHandle> node ) {
+        this.addAccessedNodes( Collections.singleton( node ) );
+    }
+
+
+    public void addAccessedNodes( final Collection<Entry<AbstractRemoteNode, RemoteConnectionHandle>> nodes ) {
+        nodes.forEach( entry -> {
+            final AbstractRemoteNode node = entry.getKey();
+            final RemoteConnectionHandle rch = entry.getValue();
+
+            this.remoteConnections.put( node, rch );
+            this.remoteNodes.compute( rch, ( handle, set ) -> {
+                if ( set == null ) {
+                    set = new HashSet<>();
+                }
+                set.add( node );
+                return set;
+            } );
+
+            if ( this.currentTransaction != null ) {
+                this.currentTransaction.addAccessedNode( node );
+            }
+        } );
+    }
+
+
+    public Collection<AbstractRemoteNode> getAccessedNodes() {
+        return Collections.unmodifiableCollection( remoteConnections.keySet() );
     }
 
 
@@ -222,16 +257,6 @@ public class ConnectionInfos {
             return this.planner;
         }
 
-        final SchemaPlus rootSchema = Frameworks.createRootSchema( true );
-        return this.planner = Frameworks.getPlanner( Frameworks.newConfigBuilder()
-                .parserConfig( this.parserConfig )
-                // CAUTION! Hard coded HSQLDB information
-                .defaultSchema( rootSchema.add( "PUBLIC", JdbcSchema.create( rootSchema, "HSQLDB", this.schemaDataSource, null, "PUBLIC" ) ) )
-                .traitDefs( ConventionTraitDef.INSTANCE, RelCollationTraitDef.INSTANCE )
-                .context( Contexts.EMPTY_CONTEXT )
-                .ruleSets( RuleSets.ofList() )
-                .costFactory( null )
-                .typeSystem( RelDataTypeSystem.DEFAULT )
-                .build() );
+        return this.planner = this.catalog.getPlanner();
     }
 }

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.standalone;
 
 
-/**
- *
- */
-public abstract class AbstractCatalog implements Catalog {
+public class Executor {
 
+
+    public Executor() {
+    }
 }

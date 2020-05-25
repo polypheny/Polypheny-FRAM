@@ -35,8 +35,8 @@ public class RemoteFrame implements Serializable {
     }
 
 
-    public static RemoteFrame fromFrame( final Frame result ) {
-        return new RemoteFrame( result );
+    public static RemoteFrame fromFrame( final Frame frame ) {
+        return new RemoteFrame( frame );
     }
 
 

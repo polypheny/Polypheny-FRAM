@@ -20,11 +20,11 @@ package org.polypheny.fram;
 /**
  *
  */
-public class DataDistributionUnitImpl extends AbstractDataDistributionUnit // implements DataDistributionUnit
+public class DataDistributionUnitImpl extends AbstractDistributionMeta // implements DataDistributionUnit
 {
 
     public DataDistributionUnitImpl() {
-        super( PolyNode.getInstance() );
+        super( PolyphenyDbNode.getInstance() );
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 }

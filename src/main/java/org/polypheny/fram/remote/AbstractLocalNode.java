@@ -17,18 +17,27 @@
 package org.polypheny.fram.remote;
 
 
-import org.polypheny.fram.AbstractCatalog;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
+import lombok.EqualsAndHashCode;
 import org.apache.calcite.adapter.jdbc.JdbcImplementor;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.parser.SqlParser.Config;
+import org.jgroups.Address;
 import org.jgroups.blocks.MethodLookup;
+import org.polypheny.fram.Catalog;
 
 
 /**
  *
  */
-public abstract class AbstractLocalNode implements RemoteMeta, MethodLookup {
+@EqualsAndHashCode(callSuper = false)
+public abstract class AbstractLocalNode extends AbstractNode implements MethodLookup {
+
+    protected static final Map<UUID, Address> CLUSTER_ID_TO_LOCAL_NODE_ADDRESS = new HashMap<>();
+
 
     protected AbstractLocalNode() {
 
@@ -41,6 +50,47 @@ public abstract class AbstractLocalNode implements RemoteMeta, MethodLookup {
     }
 
 
+    public final RemoteMeta asRemoteMeta() {
+        return this;
+    }
+
+
+    public final AbstractRemoteNode asRemoteNode() {
+        return this.asRemoteNode( Cluster.getDefaultClusterId() );
+    }
+
+
+    public final AbstractRemoteNode asRemoteNode( final UUID clusterId ) {
+        return new RemoteNode( CLUSTER_ID_TO_LOCAL_NODE_ADDRESS.get( clusterId ), Cluster.getCluster( clusterId ) );
+    }
+
+
+    @Override
+    public Address getNodeAddress() {
+        return CLUSTER_ID_TO_LOCAL_NODE_ADDRESS.get( Cluster.getDefaultClusterId() );
+    }
+
+
+    public Address getNodeAddress( final Cluster cluster ) {
+        return this.getNodeAddress( cluster.getClusterId() );
+    }
+
+
+    public Address getNodeAddress( final UUID clusterId ) {
+        return CLUSTER_ID_TO_LOCAL_NODE_ADDRESS.get( clusterId );
+    }
+
+
+    public void setNodeAddress( final Cluster cluster, final Address addressOfThisLocalNodeInTheCluster ) {
+        setNodeAddress( cluster.getClusterId(), addressOfThisLocalNodeInTheCluster );
+    }
+
+
+    public void setNodeAddress( final UUID clusterId, final Address addressOfThisLocalNodeInTheCluster ) {
+        CLUSTER_ID_TO_LOCAL_NODE_ADDRESS.put( clusterId, addressOfThisLocalNodeInTheCluster );
+    }
+
+
     public abstract Config getSqlParserConfig();
 
     public abstract JdbcImplementor getRelToSqlConverter();
@@ -49,5 +99,6 @@ public abstract class AbstractLocalNode implements RemoteMeta, MethodLookup {
 
     public abstract DataSource getDataSource();
 
-    public abstract AbstractCatalog getCatalog();
+    public abstract Catalog getCatalog();
+
 }

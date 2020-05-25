@@ -17,18 +17,20 @@
 package org.polypheny.fram.remote;
 
 
+import com.google.common.collect.Maps;
+import java.io.Serializable;
+import java.rmi.RemoteException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import org.apache.calcite.avatica.proto.Common;
+import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
-import java.io.Serializable;
-import java.rmi.RemoteException;
-import java.util.List;
-import java.util.Map;
-import org.apache.calcite.avatica.proto.Common;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 
 
 /**
@@ -70,7 +72,21 @@ public interface RemoteMeta extends java.rmi.Remote {
      */
     RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
 
-    //RemoteExecuteResult catalogPrepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
+    /**
+     * Prepares and executes a statement.
+     *
+     * @param remoteTransactionHandle (Global) transaction identifier
+     * @param globalCatalogSql the query for the global catalog
+     * @param localStoreSql the quiery for the local store
+     * @param maxRowCount Maximum number of rows for the entire query. Negative for no limit
+     * (different meaning than JDBC).
+     * @param maxRowsInFirstFrame Maximum number of rows for the first frame. This value should
+     * always be less than or equal to {@code maxRowCount} as the number of results are guaranteed
+     * to be restricted by {@code maxRowCount} and the underlying database.
+     * @return Result containing statement ID, and if a query, a result set and
+     * first frame of data
+     */
+    RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
 
     /**
      * Prepares a statement and then executes a number of SQL commands in one pass.
@@ -225,29 +241,6 @@ public interface RemoteMeta extends java.rmi.Remote {
     /**
      *
      */
-    class MethodRegistry {
-
-        private static final java.util.Map<Short, java.lang.reflect.Method> REGISTRY = new java.util.HashMap<>();
-
-
-        public static java.lang.reflect.Method getMethod( short id ) {
-            return REGISTRY.get( id );
-        }
-
-
-        private static java.lang.reflect.Method putMethod( short id, java.lang.reflect.Method method ) {
-            return REGISTRY.put( id, method );
-        }
-
-
-        private MethodRegistry() {
-        }
-    }
-
-
-    /**
-     *
-     */
     enum Method {
         ABORT( (short) 10, "abortConnection", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
         PREPARE_COMMIT( (short) 20, "prepareCommit", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
@@ -257,13 +250,14 @@ public interface RemoteMeta extends java.rmi.Remote {
         PREPARE( (short) 50, "prepare", RemoteStatementHandle.class, String.class, long.class ),
         EXECUTE( (short) 60, "execute", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class, int.class ),
         PREPARE_AND_EXECUTE( (short) 70, "prepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class ),
-        //        CATALOG_PREPARE_AND_EXECUTE( (short) 71, "catalogPrepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class ),
+        PREPARE_AND_EXECUTE_DATA_DEFINITION( (short) 71, "prepareAndExecuteDataDefinition", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, String.class, long.class, int.class ),
         PREPARE_AND_EXECUTE_BATCH( (short) 75, "prepareAndExecuteBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         EXECUTE_BATCH( (short) 80, "executeBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         FETCH( (short) 90, "fetch", RemoteStatementHandle.class, long.class, int.class ),
         CLOSE_STATEMENT( (short) 100, "closeStatement", RemoteStatementHandle.class ),
         CLOSE_CONNECTION( (short) 110, "closeConnection", RemoteConnectionHandle.class ),
-        CONNECTION_SYNC( (short) 120, "connectionSync", RemoteConnectionHandle.class, Common.ConnectionProperties.class );
+        CONNECTION_SYNC( (short) 120, "connectionSync", RemoteConnectionHandle.class, Common.ConnectionProperties.class ),
+        ;
         //
 
         //
@@ -308,9 +302,10 @@ public interface RemoteMeta extends java.rmi.Remote {
             return PREPARE_AND_EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
         }
 
-//        public static org.jgroups.blocks.MethodCall catalogPrepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) {
-//            return CATALOG_PREPARE_AND_EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-//        }
+
+        public static org.jgroups.blocks.MethodCall prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String globalCatalogSql, final String localStoreSql, final long maxRowCount, final int maxRowsInFirstFrame ) {
+            return PREPARE_AND_EXECUTE_DATA_DEFINITION.call( remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
+        }
 
 
         public static org.jgroups.blocks.MethodCall prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) {
@@ -343,10 +338,22 @@ public interface RemoteMeta extends java.rmi.Remote {
         }
 
 
+        /**
+         * @param id The ID of the method
+         * @return Method for the given ID, or null
+         * @see org.jgroups.blocks.MethodLookup
+         */
         public static java.lang.reflect.Method findMethod( final short id ) {
-            return MethodRegistry.getMethod( id );
+            return valueOf( id ).getMethod();
         }
 
+
+        public static Method valueOf( short methodId ) {
+            return LOOKUP.get( methodId );
+        }
+
+
+        private static final Map<Short, Method> LOOKUP = Maps.uniqueIndex( Arrays.asList( Method.values() ), Method::getId );
 
         private final short id;
         private final transient java.lang.reflect.Method method;
@@ -354,23 +361,30 @@ public interface RemoteMeta extends java.rmi.Remote {
 
         Method( final short id, final String methodName, final Class<?>... parameterTypes ) {
             this.id = id;
-            this.method = createAndRegisterMethod( id, methodName, parameterTypes );
-        }
-
-
-        private java.lang.reflect.Method createAndRegisterMethod( final short id, final String methodName, final Class<?>... parameterTypes ) {
             try {
-                final java.lang.reflect.Method method = RemoteMeta.class.getMethod( methodName, parameterTypes );
-                if ( MethodRegistry.putMethod( id, method ) != null ) {
-                    throw new Error( "This should not happen. An ID was used twice." );
-                }
-                return method;
+                this.method = RemoteMeta.class.getMethod( methodName, parameterTypes );
             } catch ( NoSuchMethodException e ) {
                 throw new Error( "This should not happen. Check the enum declarations vs. the declared methods in `" + RemoteMeta.class.getCanonicalName() + "´.", e );
             }
         }
 
 
+        public short getId() {
+            return id;
+        }
+
+
+        public java.lang.reflect.Method getMethod() {
+            return method;
+        }
+
+
+        /**
+         * Creates a org.jgroups.blocks.MethodCall object from this Enum using the given parameters.
+         *
+         * @param parameter The parameters used by the MethodCall
+         * @return The MethodCall object calling this Method using the given parameters.
+         */
         public org.jgroups.blocks.MethodCall call( final Object... parameter ) {
             return new org.jgroups.blocks.MethodCall( this.id, parameter );
         }
