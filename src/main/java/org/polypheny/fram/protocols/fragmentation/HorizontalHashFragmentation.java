@@ -261,33 +261,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     public ResultSetInfos prepareAndExecuteDataQuerySelect( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
 
-        final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
-            @Override
-            public SqlIdentifier visit( SqlIdentifier id ) {
-                return id;
-            }
-
-
-            @Override
-            public SqlIdentifier visit( SqlCall call ) {
-                switch ( call.getKind() ) {
-                    case AS:
-                        return call.operand( 0 );
-                }
-                return super.visit( call );
-            }
-        } );
-
-        final Map<String, Integer> primaryKeysColumnIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
-        if ( primaryKeysColumnIndexes.size() > 1 ) {
-            // Composite primary key
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
-        final String primaryKey = primaryKeysColumnIndexes.keySet().iterator().next();
-
-        final SqlNodeList selectList = sql.getSelectList();
-        final SqlNode condition = sql.getWhere();
-
         if ( sql.getSelectList().accept( new SqlBasicVisitor<Boolean>() {
             @Override
             public Boolean visit( SqlNodeList nodeList ) {
@@ -313,6 +286,32 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             // SELECT MIN/MAX/AVG/ FROM ...
             return prepareAndExecuteDataQuerySelectAggregate( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         }
+
+        final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
+            @Override
+            public SqlIdentifier visit( SqlIdentifier id ) {
+                return id;
+            }
+
+
+            @Override
+            public SqlIdentifier visit( SqlCall call ) {
+                switch ( call.getKind() ) {
+                    case AS:
+                        return call.operand( 0 );
+                }
+                return super.visit( call );
+            }
+        } );
+
+        final Map<String, Integer> primaryKeysColumnIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        if ( primaryKeysColumnIndexes.size() > 1 ) {
+            // Composite primary key
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+        final String primaryKey = primaryKeysColumnIndexes.keySet().iterator().next();
+
+        final SqlNode condition = sql.getWhere();
 
         if ( condition == null ) {
             final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
@@ -681,6 +680,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
         final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
 
+        boolean allPrimaryKeyColumnsAreInTheCondition = true;
         for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
             // for every primary key and its index in the table
             final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
@@ -689,8 +689,25 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                 primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
             } else {
                 // the primary key is NOT in the condition
-                throw new UnsupportedOperationException( "Not implemented yet." );
+                // Thus, during execution, the statement has to be executed on all nodes
+                allPrimaryKeyColumnsAreInTheCondition = false;
             }
+        }
+
+        final Function2<List<AbstractRemoteNode>, List<TypedValue>, List<AbstractRemoteNode>> executionTargetFunction;
+        if ( allPrimaryKeyColumnsAreInTheCondition ) {
+            executionTargetFunction = ( clusterMembers, parameterValues ) -> {
+                final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
+                final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
+                int primaryKeyValueIndex = 0;
+                for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
+                    primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
+                }
+                final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
+                return Arrays.asList( executionTargets[executionTargetIndex] );
+            };
+        } else {
+            executionTargetFunction = ( clusterMembers, typedValues ) -> clusterMembers;
         }
 
         final int numberOfDynamicParameters = targetColumns.accept( new SqlDynamicParamsCounter() ) + condition.accept( new SqlDynamicParamsCounter() );
@@ -770,16 +787,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             throw new UnsupportedOperationException( "Not supported yet." );
         }
 
-        this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
-            final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
-            final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
-            int primaryKeyValueIndex = 0;
-            for ( Iterator<Integer> primaryKeyColumnsIndexIterator = primaryKeyColumnsIndexes.iterator(); primaryKeyColumnsIndexIterator.hasNext(); ) {
-                primaryKeyValues[primaryKeyValueIndex++] = parameterValues.get( primaryKeyColumnsIndexesToParametersIndexes.get( primaryKeyColumnsIndexIterator.next() ) );
-            }
-            final int executionTargetIndex = Math.abs( Objects.hash( primaryKeyValues ) % executionTargets.length );
-            return Arrays.asList( executionTargets[executionTargetIndex] );
-        } );
+        this.executionTargetsFunctions.put( preparedStatement, executionTargetFunction );
 
         return preparedStatement;
     }
@@ -809,6 +817,32 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
     protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataQuerySelect( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
+
+        if ( sql.getSelectList().accept( new SqlBasicVisitor<Boolean>() {
+            @Override
+            public Boolean visit( SqlNodeList nodeList ) {
+                boolean isAggregate = false;
+                for ( SqlNode n : nodeList.getList() ) {
+                    isAggregate |= n.accept( this );
+                }
+                return isAggregate;
+            }
+
+
+            @Override
+            public Boolean visit( SqlCall call ) {
+                return call.isA( SqlKind.AGGREGATE );
+            }
+
+
+            @Override
+            public Boolean visit( SqlIdentifier id ) {
+                return Boolean.FALSE;
+            }
+        } ) ) {
+            // SELECT MIN/MAX/AVG/ FROM ...
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        }
 
         final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
             @Override
