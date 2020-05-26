@@ -179,7 +179,7 @@ dependencies {
     // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
     implementation group: 'com.typesafe', name: 'config', version: '1.4.0'
     // Vavr - object-functional library (Apache 2.0)
-    implementation group: 'io.vavr', name: 'vavr', version: '0.10.2'
+    implementation group: 'io.vavr', name: 'vavr', version: '0.10.3'
 
 
     //
