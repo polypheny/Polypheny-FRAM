@@ -36,7 +36,7 @@ buildscript {
         classpath group: 'io.franzbecker', name: 'gradle-lombok', version: '4.0.0'
 
         // SonarQube (https://plugins.gradle.org/plugin/org.sonarqube, GNU LGPL 3)
-        classpath group: 'org.sonarsource.scanner.gradle', name: 'sonarqube-gradle-plugin', version: '2.8.0.1969'
+        classpath group: 'org.sonarsource.scanner.gradle', name: 'sonarqube-gradle-plugin', version: '3.0'
 
         // Packr (https://github.com/hendraanggrian/packr-gradle-plugin, Apache 2.0)
         classpath group: 'com.hendraanggrian', name: 'packr-gradle-plugin', version: '0.2'
