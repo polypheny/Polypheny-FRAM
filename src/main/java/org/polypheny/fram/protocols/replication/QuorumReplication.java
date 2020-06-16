@@ -72,8 +72,8 @@ import org.polypheny.fram.standalone.Utils;
 
 /**
  * """
- * > Read and write quorums must fulfill the following constraints:
- * > 2 · wq > n and rq + wq > n, being n the number of sites.
+ * &gt; Read and write quorums must fulfill the following constraints:
+ * &gt; 2 · wq &gt; n and rq + wq &gt; n, being n the number of sites.
  * """
  * -- Ricardo Jiménez-Peris, Marta Patiño-Martínez, Gustavo Alonso, and Bettina Kemme. 2003. Are Quorums an Alternative for Data Replication? ACM Trans. Database Syst. 28, 3 (September 2003), 257–294. DOI:https://doi.org/10.1145/937598.937601
  */
@@ -86,9 +86,9 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     /**
      * """
-     * > The minimum quorum sizes satisfying the constraints are:
-     * > 2 · wq = n + 1 and rq + wq = n + 1 and therefore,
-     * > wq = floor(n / 2) + 1 and rq = ceil(n / 2 ) = floor((n+1) / 2).
+     * &gt; The minimum quorum sizes satisfying the constraints are:
+     * &gt; 2 · wq = n + 1 and rq + wq = n + 1 and therefore,
+     * &gt; wq = floor(n / 2) + 1 and rq = ceil(n / 2 ) = floor((n+1) / 2).
      * """
      * -- Ricardo Jiménez-Peris, Marta Patiño-Martínez, Gustavo Alonso, and Bettina Kemme. 2003. Are Quorums an Alternative for Data Replication? ACM Trans. Database Syst. 28, 3 (September 2003), 257–294. DOI:https://doi.org/10.1145/937598.937601
      */

@@ -85,18 +85,18 @@ public class StatementInfos {
     }
 
 
-    public ResultSetInfos createResultSet( Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
+    public QueryResultSet createResultSet( Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
         synchronized ( this ) {
             this.resultSetInfos = new QueryResultSet( this, remoteResults, resultsMergeFunction, resultsFetchFunction );
-            return this.resultSetInfos;
+            return (QueryResultSet) this.resultSetInfos;
         }
     }
 
 
-    public ResultSetInfos createBatchResultSet( Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
+    public BatchResultSetInfos createBatchResultSet( Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
         synchronized ( this ) {
             this.resultSetInfos = new BatchResultSetInfos( this, remoteBatchResults, resultMergeFunction );
-            return this.resultSetInfos;
+            return (BatchResultSetInfos) this.resultSetInfos;
         }
     }
 
