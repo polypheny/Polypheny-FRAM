@@ -33,7 +33,7 @@ import org.polypheny.fram.Catalog;
 /**
  *
  */
-@EqualsAndHashCode(callSuper = false)
+@EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
 public abstract class AbstractLocalNode extends AbstractNode implements MethodLookup {
 
     protected static final Map<UUID, Address> CLUSTER_ID_TO_LOCAL_NODE_ADDRESS = new HashMap<>();
@@ -66,6 +66,7 @@ public abstract class AbstractLocalNode extends AbstractNode implements MethodLo
 
 
     @Override
+    @EqualsAndHashCode.Include
     public Address getNodeAddress() {
         return CLUSTER_ID_TO_LOCAL_NODE_ADDRESS.get( Cluster.getDefaultClusterId() );
     }

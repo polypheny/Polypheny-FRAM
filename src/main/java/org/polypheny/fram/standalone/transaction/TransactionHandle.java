@@ -54,18 +54,18 @@ public class TransactionHandle implements Xid, Serializable {
      */
     private final byte[] globalTransactionId = new byte[javax.transaction.xa.Xid.MAXGTRIDSIZE];
     /**
-     * |----------------- branchQualifier (64 Bytes) ------------------------------------------------------------|
-     * |- UUID: nodeId ---------| |- UUID: storeId --------| |- UUID: reserved -------| |- UUID: custom ---------|
-     * |- 8 Bytes -||- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -|
+     * |----------------- branchQualifier (64 Bytes) ----------------------------------------------------------------|
+     * |- UUID: branchId (nodeId) --| |- UUID: storeId --------| |- UUID: reserved -------| |- UUID: custom ---------|
+     * |- 8 Bytes ---||--- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -| |- 8 Bytes -||- 8 Bytes -|
      * most sig                                                                                        least sig
      */
     private final byte[] branchQualifier = new byte[javax.transaction.xa.Xid.MAXBQUALSIZE];
 
 
     /**
-     * Identifier for a global transaction (includes already the branch part for this branch)
+     * Identifier for a global transaction
      *
-     * Scope: GLOBAL, local (i.e., the origin of this distributed transaction)
+     * Scope: GLOBAL, coordinator layer (i.e., facing the client; before the network)
      */
     public static TransactionHandle generateGlobalTransactionIdentifier( final UUID nodeId, final UUID userId, final UUID connectionId, final UUID transactionId ) {
         return new TransactionHandle( nodeId, userId, connectionId, transactionId );
@@ -75,7 +75,7 @@ public class TransactionHandle implements Xid, Serializable {
     /**
      * Identifier which needs to be generated on a remote branch out of the global transaction identifier
      *
-     * Scope: GLOBAL, remote branch (i.e., this branch is not the origin of this distributed transaction
+     * Scope: GLOBAL, storage layer (i.e., facing the storage; after the network)
      */
     public static TransactionHandle generateBranchTransactionIdentifier( final Xid globalTransactionIdentifier, final UUID nodeId ) {
         return new TransactionHandle( globalTransactionIdentifier, nodeId );
@@ -103,9 +103,6 @@ public class TransactionHandle implements Xid, Serializable {
         setField( this.globalTransactionId, USER_ID_LSB_INDEX, userId.getMostSignificantBits(), userId.getLeastSignificantBits() );
         setField( this.globalTransactionId, CONNECTION_ID_LSB_INDEX, connectionId.getMostSignificantBits(), connectionId.getLeastSignificantBits() );
         setField( this.globalTransactionId, TRANSACTION_ID_LSB_INDEX, transactionId.getMostSignificantBits(), transactionId.getLeastSignificantBits() );
-
-        //
-        setField( this.branchQualifier, NODE_ID_LSB_INDEX, nodeId.getMostSignificantBits(), nodeId.getLeastSignificantBits() );
     }
 
 
@@ -179,13 +176,18 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
+    public UUID getBranchId() {
+        return extractUUID( this.branchQualifier, NODE_ID_LSB_INDEX );
+    }
+
+
     public UUID getStoreId() {
         return extractUUID( this.branchQualifier, STORE_ID_LSB_INDEX );
     }
 
 
-    public void setStoreId( final UUID storeId ) {
-        setStoreField( storeId.getMostSignificantBits(), storeId.getLeastSignificantBits() );
+    public TransactionHandle setStoreId( final UUID storeId ) {
+        return setStoreField( storeId.getMostSignificantBits(), storeId.getLeastSignificantBits() );
     }
 
 
@@ -194,8 +196,10 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
-    public void setStoreField( final long mostSignificantBytes, final long leastSignificantBytes ) {
-        setField( this.branchQualifier, STORE_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+    public TransactionHandle setStoreField( final long mostSignificantBytes, final long leastSignificantBytes ) {
+        TransactionHandle withStore = this.clone();
+        withStore.setField( this.branchQualifier, STORE_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+        return withStore;
     }
 
 
@@ -204,8 +208,8 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
-    public void setReservedId( final UUID reservedId ) {
-        setReservedField( reservedId.getMostSignificantBits(), reservedId.getLeastSignificantBits() );
+    public TransactionHandle setReservedId( final UUID reservedId ) {
+        return setReservedField( reservedId.getMostSignificantBits(), reservedId.getLeastSignificantBits() );
     }
 
 
@@ -214,8 +218,10 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
-    public void setReservedField( final long mostSignificantBytes, final long leastSignificantBytes ) {
-        setField( this.branchQualifier, RESERVED_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+    public TransactionHandle setReservedField( final long mostSignificantBytes, final long leastSignificantBytes ) {
+        TransactionHandle withReserved = this.clone();
+        withReserved.setField( this.branchQualifier, RESERVED_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+        return withReserved;
     }
 
 
@@ -224,8 +230,8 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
-    public void setCustomId( final UUID customId ) {
-        setCustomField( customId.getMostSignificantBits(), customId.getLeastSignificantBits() );
+    public TransactionHandle setCustomId( final UUID customId ) {
+        return setCustomField( customId.getMostSignificantBits(), customId.getLeastSignificantBits() );
     }
 
 
@@ -234,8 +240,26 @@ public class TransactionHandle implements Xid, Serializable {
     }
 
 
-    public void setCustomField( final long mostSignificantBytes, final long leastSignificantBytes ) {
-        setField( this.branchQualifier, CUSTOM_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+    public TransactionHandle setCustomField( final long mostSignificantBytes, final long leastSignificantBytes ) {
+        TransactionHandle withCustom = this.clone();
+        withCustom.setField( this.branchQualifier, CUSTOM_ID_LSB_INDEX, mostSignificantBytes, leastSignificantBytes );
+        return withCustom;
+    }
+
+
+    public boolean isGlobalTransactionIdentifier() {
+        // globalTransactionId set
+        // NO branchQualifier
+        return !getNodeId().equals( Utils.EMPTY_UUID ) && !getUserId().equals( Utils.EMPTY_UUID ) && !getConnectionId().equals( Utils.EMPTY_UUID ) && !getTransactionId().equals( Utils.EMPTY_UUID )
+                && getBranchId().equals( Utils.EMPTY_UUID ) && getStoreId().equals( Utils.EMPTY_UUID );
+    }
+
+
+    public boolean isBranchTransactionIdentifier() {
+        // globalTransactionId set
+        // branchQualifier
+        return !getNodeId().equals( Utils.EMPTY_UUID ) && !getUserId().equals( Utils.EMPTY_UUID ) && !getConnectionId().equals( Utils.EMPTY_UUID ) && !getTransactionId().equals( Utils.EMPTY_UUID )
+                && !getBranchId().equals( Utils.EMPTY_UUID );
     }
 
 
@@ -243,7 +267,13 @@ public class TransactionHandle implements Xid, Serializable {
         // NO (origin) NODE
         // NO USER
         // NO CONNECTION
-        return getNodeId().equals( Utils.EMPTY_UUID ) && getUserId().equals( Utils.EMPTY_UUID ) && getConnectionId().equals( Utils.EMPTY_UUID );
+        return getNodeId().equals( Utils.EMPTY_UUID ) && getUserId().equals( Utils.EMPTY_UUID ) && getConnectionId().equals( Utils.EMPTY_UUID ) && !getTransactionId().equals( Utils.EMPTY_UUID )
+                && !getBranchId().equals( Utils.EMPTY_UUID );
+    }
+
+
+    public TransactionHandle generateBranchTransactionIdentifier( final UUID nodeId ) {
+        return new TransactionHandle( this, nodeId );
     }
 
 

@@ -81,7 +81,7 @@ public class TransactionHandleTest {
         final String expected = "Xid: {"
                 + "GID: " + testSubject.getNodeId() + "--" + testSubject.getUserId() + "--" + testSubject.getConnectionId() + "--" + testSubject.getTransactionId()
                 + ", "
-                + "BID: " + testSubject.getNodeId() + "--" + testSubject.getStoreId() + "--" + /* <reserved> */"00000000-0000-0000-0000-000000000000" /* </reserved> */ + "--" + testSubject.getCustomId()
+                + "BID: " + testSubject.getBranchId() + "--" + testSubject.getStoreId() + "--" + /* <reserved> */"00000000-0000-0000-0000-000000000000" /* </reserved> */ + "--" + testSubject.getCustomId()
                 + "}";
 
         final String actual = testSubject.toString();

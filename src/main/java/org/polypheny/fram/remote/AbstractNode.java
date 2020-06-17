@@ -17,9 +17,11 @@
 package org.polypheny.fram.remote;
 
 
+import lombok.EqualsAndHashCode;
 import org.jgroups.Address;
 
 
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public abstract class AbstractNode implements RemoteMeta {
 
     public AbstractNode() {
@@ -27,5 +29,6 @@ public abstract class AbstractNode implements RemoteMeta {
     }
 
 
+    @EqualsAndHashCode.Include
     public abstract Address getNodeAddress();
 }

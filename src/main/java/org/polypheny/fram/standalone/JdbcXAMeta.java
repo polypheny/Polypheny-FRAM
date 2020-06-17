@@ -27,6 +27,7 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
@@ -55,6 +56,8 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
     private static final Logger LOGGER = LoggerFactory.getLogger( JdbcXAMeta.class );
     private static final Executor ABORT_CONNECTION_EXECUTOR = Executors.newCachedThreadPool();
 
+    private final UUID storeId;
+
     private final XADataSource xaDataSource;
     private final DataSource dataSource;
     private final Properties settings;
@@ -65,6 +68,8 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     public JdbcXAMeta( final XADataSource xaDataSource, final Properties settings ) throws SQLException {
         super( null, settings );
+        this.storeId = UUID.randomUUID(); // this might not be a good way to identify this store, especially if this object is constructed more than once for the given datasource!
+
         this.xaDataSource = xaDataSource;
         this.dataSource = new XADataSourceAdapter( this.xaDataSource );
         this.settings = settings;

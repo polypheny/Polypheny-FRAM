@@ -52,17 +52,6 @@ public abstract class AbstractRemoteNode extends AbstractNode implements Seriali
     }
 
 
-    public Cluster getCluster() {
-        return this.cluster;
-    }
-
-
-    @Override
-    public Address getNodeAddress() {
-        return this.address;
-    }
-
-
     private void writeObject( final java.io.ObjectOutputStream out ) throws IOException {
         out.defaultWriteObject();
 
@@ -74,6 +63,36 @@ public abstract class AbstractRemoteNode extends AbstractNode implements Seriali
         in.defaultReadObject();
 
         this.cluster = Cluster.getCluster( (UUID) in.readObject() );
+    }
+
+
+    public Cluster getCluster() {
+        return this.cluster;
+    }
+
+
+    @Override
+    public Address getNodeAddress() {
+        return this.address;
+    }
+
+
+    public final RemoteMeta asRemoteMeta() {
+        return this;
+    }
+
+
+    public final boolean isLocalNode() {
+        return this.address.equals( this.cluster.getLocalNode().getNodeAddress( this.cluster ) );
+    }
+
+
+    public final AbstractLocalNode asLocalNode() {
+        if ( isLocalNode() ) {
+            return this.cluster.getLocalNode();
+        } else {
+            throw new IllegalStateException( "This is not the remote representation of the local node." );
+        }
     }
 
 

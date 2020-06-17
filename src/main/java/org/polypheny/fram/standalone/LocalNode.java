@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
 import javax.transaction.xa.XAException;
 import org.apache.calcite.adapter.jdbc.JdbcImplementor;
@@ -64,6 +65,8 @@ class LocalNode extends AbstractLocalNode {
 
     private static final Logger LOGGER = LoggerFactory.getLogger( LocalNode.class );
 
+    private final UUID nodeId;
+
     private final XAMeta xaMeta;
     private final DataSource dataSource;
 
@@ -73,6 +76,7 @@ class LocalNode extends AbstractLocalNode {
 
 
     private LocalNode() {
+        this.nodeId = GlobalCatalog.getInstance().getNodeId();
         this.xaMeta = DataStore.getStorage();
         this.dataSource = DataStore.getStorageDataSource();
     }
@@ -257,12 +261,14 @@ class LocalNode extends AbstractLocalNode {
     public RemoteExecuteResult execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws RemoteException {
         LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         final RemoteExecuteResult result;
         try {
             final ConnectionInfos connection = getConnection( remoteStatementHandle.toStatementHandle() ); // a connection should already be open since we should have prepared the statement
             final StatementInfos statement = getStatement( remoteStatementHandle.toStatementHandle() ); // get the prepared statement
 
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
 
             final List<TypedValue> deserializedParameterValues = new LinkedList<>();
             for ( Common.TypedValue value : parameterValues ) {
@@ -303,12 +309,14 @@ class LocalNode extends AbstractLocalNode {
     public RemoteExecuteBatchResult executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues ) throws RemoteException {
         LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         final RemoteExecuteBatchResult result;
         try {
             final ConnectionInfos connection = getConnection( remoteStatementHandle.toStatementHandle() ); // a connection should already be open since we should have prepared the statement
             final StatementInfos statement = getStatement( remoteStatementHandle.toStatementHandle() ); // get the prepared statement
 
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
 
             final List<List<TypedValue>> deserializedParameterValues = new LinkedList<>();
             for ( UpdateBatch batch : parameterValues ) {
@@ -337,12 +345,14 @@ class LocalNode extends AbstractLocalNode {
     public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
         LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         final RemoteExecuteResult result;
         try {
             final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
             final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
 
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
             LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
 
             final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
@@ -364,14 +374,16 @@ class LocalNode extends AbstractLocalNode {
     public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         final RemoteExecuteResult result;
         try {
             final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
             final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
 
-            final ExecuteResult catalogExecuteResult = this.getCatalog().prepareAndExecuteDataDefinition( remoteTransactionHandle.toTransactionHandle(), remoteStatementHandle.toStatementHandle(), globalCatalogSql, maxRowCount, maxRowsInFirstFrame );
+            final ExecuteResult catalogExecuteResult = this.getCatalog().prepareAndExecuteDataDefinition( branchTransactionHandle, remoteStatementHandle.toStatementHandle(), globalCatalogSql, maxRowCount, maxRowsInFirstFrame );
 
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
             LOGGER.debug( "executing xaMeta.prepareAndExecuteDataDefinition( ... ) in the context of {}", transaction );
             final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), localStoreSql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
             result = RemoteExecuteResult.fromExecuteResult( executeResult );
@@ -392,12 +404,14 @@ class LocalNode extends AbstractLocalNode {
     public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         final RemoteExecuteBatchResult result;
         try {
             final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
             final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
 
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, remoteTransactionHandle.toTransactionHandle() );
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
             result = RemoteExecuteBatchResult.fromExecuteBatchResult( xaMeta.prepareAndExecuteBatch( statement.getStatementHandle(), sqlCommands ) );
 
             // todo: Do we need to take action if the connection is set on AutoCommit?
@@ -427,6 +441,8 @@ class LocalNode extends AbstractLocalNode {
     public Void abortConnection( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
         LOGGER.trace( "abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         throw new RemoteException( "UnsupportedOperation", new UnsupportedOperationException( "xaMeta.abortConnection( remoteConnectionHandle.toConnectionHandle() ) not supported yet." ) );
     }
 
@@ -441,9 +457,10 @@ class LocalNode extends AbstractLocalNode {
             this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle() );
             xaMeta.commit( remoteConnectionHandle.toConnectionHandle() );
         } else {
+            final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
             try {
-                this.getCatalog().onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
-                xaMeta.onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
+                this.getCatalog().onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+                xaMeta.onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             } catch ( XAException ex ) {
                 throw new RemoteException( ex.getMessage(), ex );
             }
@@ -457,10 +474,16 @@ class LocalNode extends AbstractLocalNode {
     public boolean prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle ) throws RemoteException {
         LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} )", remoteConnectionHandle, remoteTransactionHandle );
 
+        if ( remoteTransactionHandle == null || remoteTransactionHandle.toTransactionHandle() == null ) {
+            throw new RemoteException( "Cannot perform 2PC prepare without a transaction handle." );
+        }
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
         boolean result = true;
         try {
-            result &= this.getCatalog().prepareCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
-            result &= xaMeta.prepareCommit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
+            result &= this.getCatalog().prepareCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+            result &= xaMeta.prepareCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
         } catch ( XAException ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
@@ -476,13 +499,15 @@ class LocalNode extends AbstractLocalNode {
 
         if ( remoteTransactionHandle == null || remoteTransactionHandle.toTransactionHandle() == null ) {
             throw new RemoteException( "Cannot perform 2PC commit without a transaction handle." );
-        } else {
-            try {
-                this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
-                xaMeta.commit( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
-            } catch ( XAException ex ) {
-                throw new RemoteException( ex.getMessage(), ex );
-            }
+        }
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
+        try {
+            this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+            xaMeta.commit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+        } catch ( XAException ex ) {
+            throw new RemoteException( ex.getMessage(), ex );
         }
 
         return VOID;
@@ -497,9 +522,10 @@ class LocalNode extends AbstractLocalNode {
             this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle() );
             xaMeta.rollback( remoteConnectionHandle.toConnectionHandle() );
         } else {
+            final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
             try {
-                this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
-                xaMeta.rollback( remoteConnectionHandle.toConnectionHandle(), remoteTransactionHandle.toTransactionHandle() );
+                this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+                xaMeta.rollback( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             } catch ( NoSuchConnectionException | XAException ex ) {
                 throw new RemoteException( ex.getMessage(), ex );
             }
