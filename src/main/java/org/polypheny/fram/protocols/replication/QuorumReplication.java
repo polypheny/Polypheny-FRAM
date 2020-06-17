@@ -50,6 +50,8 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlDdlNodes;
+import org.apache.calcite.sql.ddl.SqlDropTable;
+import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -68,6 +70,8 @@ import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.polypheny.fram.standalone.Utils;
+import org.polypheny.fram.standalone.parser.sql.ddl.SqlAlterTable;
+import org.polypheny.fram.standalone.parser.sql.ddl.SqlCreateIndex;
 
 
 /**
@@ -126,6 +130,8 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
     public final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> readQuorumFunction;
     public final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> writeQuorumFunction;
 
+    public final boolean WORK_IN_PROGRESS = true;
+
 
     public QuorumReplication( final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> readQuorumFunction, final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> writeQuorumFunction ) {
         this.readQuorumFunction = readQuorumFunction;
@@ -151,55 +157,124 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        if ( WORK_IN_PROGRESS ) {
+            LOGGER.warn( "Quorum Replication currently without(!) version columns!" );
+            return super.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+        }
+
         switch ( sql.getKind() ) {
             case CREATE_TABLE:
                 return prepareAndExecuteDataDefinitionCreateTable( connection, transaction, statement, (SqlCreateTable) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             case DROP_TABLE:
-                return super.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                return super.prepareAndExecuteDataDefinition( connection, transaction, statement, (SqlDropTable) sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+            case CREATE_INDEX: // todo - do we need to alter the index, too? See TPC-C DDL script.
+                return super.prepareAndExecuteDataDefinition( connection, transaction, statement, (SqlCreateIndex) sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+            case ALTER_TABLE:
+                return prepareAndExecuteDataDefinitionAlterTable( connection, transaction, statement, (SqlAlterTable) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             default:
-                throw new UnsupportedOperationException();
+                throw new UnsupportedOperationException( "Not implemented yet." );
         }
     }
 
 
     protected ResultSetInfos prepareAndExecuteDataDefinitionCreateTable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlCreateTable origin, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+
         final SqlNodeList originColumnList = origin.operand( 1 );
         final List<SqlNode> columns = new LinkedList<>();
+
         for ( SqlNode originColumnAsNode : originColumnList.getList() ) {
-            if ( !(originColumnAsNode instanceof SqlColumnDeclaration) ) {
-                continue; // e.g., table constraints
-            }
-            final SqlColumnDeclaration originColumn = (SqlColumnDeclaration) originColumnAsNode;
-            columns.add( originColumn );
+            if ( originColumnAsNode instanceof SqlColumnDeclaration ) {
 
-            final SqlParserPos originColumnPos = originColumn.getParserPosition();
-            final SqlIdentifier originColumnName = originColumn.operand( 0 );
-            final List<String> names = new LinkedList<>();
-            for ( Iterator<String> originColumnNamesIterator = originColumnName.names.iterator(); originColumnNamesIterator.hasNext(); ) {
-                String columnNamePart = originColumnNamesIterator.next();
-                if ( !originColumnNamesIterator.hasNext() ) {
-                    columnNamePart += "_$V";
+                final SqlColumnDeclaration originColumn = (SqlColumnDeclaration) originColumnAsNode;
+                columns.add( originColumn );
+
+                final SqlParserPos originColumnPos = originColumn.getParserPosition();
+                final SqlIdentifier originColumnName = originColumn.operand( 0 );
+                final List<String> names = new LinkedList<>();
+                for ( Iterator<String> originColumnNamesIterator = originColumnName.names.iterator(); originColumnNamesIterator.hasNext(); ) {
+                    String columnNamePart = originColumnNamesIterator.next();
+                    if ( !originColumnNamesIterator.hasNext() ) {
+                        columnNamePart += "_$V";
+                    }
+                    names.add( columnNamePart );
                 }
-                names.add( columnNamePart );
-            }
-            final List<SqlParserPos> versionColumnNamesPositions = new LinkedList<>();
-            for ( int i = 0; i < originColumnName.names.size(); ++i ) {
-                SqlParserPos versionColumnNamePosition = originColumnName.getComponentParserPosition( i );
-                if ( i + 1 == originColumnName.names.size() ) {
-                    versionColumnNamePosition = versionColumnNamePosition.withQuoting( true );
+                final List<SqlParserPos> versionColumnNamesPositions = new LinkedList<>();
+                for ( int i = 0; i < originColumnName.names.size(); ++i ) {
+                    SqlParserPos versionColumnNamePosition = originColumnName.getComponentParserPosition( i );
+                    if ( i + 1 == originColumnName.names.size() ) {
+                        versionColumnNamePosition = versionColumnNamePosition.withQuoting( true );
+                    }
+                    versionColumnNamesPositions.add( versionColumnNamePosition );
                 }
-                versionColumnNamesPositions.add( versionColumnNamePosition );
+                final SqlIdentifier versionColumnName = (SqlIdentifier) originColumnName.clone( originColumnPos.withQuoting( true ) );
+                versionColumnName.setNames( names, versionColumnNamesPositions );
+
+                final SqlDataTypeSpec datatype = new SqlDataTypeSpec( new SqlBasicTypeNameSpec( SqlTypeName.BIGINT, originColumnPos ), originColumnPos );
+                final SqlNode expression = null;
+                final ColumnStrategy strategy = ColumnStrategy.NULLABLE;
+
+                columns.add( SqlDdlNodes.column( originColumnPos.withQuoting( true ), versionColumnName, datatype, expression, strategy ) );
+
+            } else {
+
+                // e.g., table constraints
+                if ( originColumnAsNode instanceof SqlKeyConstraint ) {
+                    // PRIMARY KEY or UNIQUE
+                    final SqlKeyConstraint originKeyConstraint = (SqlKeyConstraint) originColumnAsNode;
+                    final List<SqlNode> keyConstraintIdentifiers = new LinkedList<>();
+
+                    for ( SqlNode originalIdentifierAsNode : originKeyConstraint.<SqlNodeList>operand( 1 ).getList() ) {
+                        if ( !(originalIdentifierAsNode instanceof SqlIdentifier) ) {
+                            throw new UnsupportedOperationException( "Not implemented yet." );
+                        }
+
+                        final SqlIdentifier originalIdentifier = (SqlIdentifier) originalIdentifierAsNode;
+                        keyConstraintIdentifiers.add( originalIdentifier );
+
+                        final SqlParserPos originColumnPos = originalIdentifier.getParserPosition();
+                        final List<String> names = new LinkedList<>();
+                        for ( Iterator<String> originIdentifierNamesIterator = originalIdentifier.names.iterator(); originIdentifierNamesIterator.hasNext(); ) {
+                            String columnNamePart = originIdentifierNamesIterator.next();
+                            if ( !originIdentifierNamesIterator.hasNext() ) {
+                                columnNamePart += "_$V";
+                            }
+                            names.add( columnNamePart );
+                        }
+                        final List<SqlParserPos> versionIdentifierNamesPositions = new LinkedList<>();
+                        for ( int i = 0; i < originalIdentifier.names.size(); ++i ) {
+                            SqlParserPos versionColumnNamePosition = originalIdentifier.getComponentParserPosition( i );
+                            if ( i + 1 == originalIdentifier.names.size() ) {
+                                versionColumnNamePosition = versionColumnNamePosition.withQuoting( true );
+                            }
+                            versionIdentifierNamesPositions.add( versionColumnNamePosition );
+                        }
+                        final SqlIdentifier versionIdentifierName = (SqlIdentifier) originalIdentifier.clone( originColumnPos.withQuoting( true ) );
+                        versionIdentifierName.setNames( names, versionIdentifierNamesPositions );
+                        keyConstraintIdentifiers.add( versionIdentifierName );
+                    }
+
+                    final SqlNodeList keyConstraintIdentifiersAsNodeList = new SqlNodeList( keyConstraintIdentifiers, originKeyConstraint.<SqlNodeList>operand( 1 ).getParserPosition() );
+                    final SqlKeyConstraint newKeyConstraint;
+                    switch ( originKeyConstraint.getOperator().kind ) {
+                        case UNIQUE:
+                            newKeyConstraint = SqlKeyConstraint.unique( originKeyConstraint.getParserPosition(), originKeyConstraint.operand( 0 ), keyConstraintIdentifiersAsNodeList );
+                            break;
+                        case PRIMARY_KEY:
+                            newKeyConstraint = SqlKeyConstraint.primary( originKeyConstraint.getParserPosition(), originKeyConstraint.operand( 0 ), keyConstraintIdentifiersAsNodeList );
+                            break;
+                        default:
+                            throw new UnsupportedOperationException( "Not implemented yet." );
+                    }
+                    columns.add( newKeyConstraint );
+                } else {
+                    throw new UnsupportedOperationException( "Not implemented yet." );
+                }
+
             }
-            final SqlIdentifier versionColumnName = (SqlIdentifier) originColumnName.clone( originColumnPos.withQuoting( true ) );
-            versionColumnName.setNames( names, versionColumnNamesPositions );
-
-            final SqlDataTypeSpec datatype = new SqlDataTypeSpec( new SqlBasicTypeNameSpec( SqlTypeName.BIGINT, originColumnPos ), originColumnPos );
-            final SqlNode expression = null;
-            final ColumnStrategy strategy = ColumnStrategy.NULLABLE;
-
-            columns.add( SqlDdlNodes.column( originColumnPos.withQuoting( true ), versionColumnName, datatype, expression, strategy ) );
         }
 
         final SqlParserPos pos = origin.getParserPosition();
@@ -240,6 +315,11 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
                 throw Utils.wrapException( e );
             }
         } );
+    }
+
+
+    protected ResultSetInfos prepareAndExecuteDataDefinitionAlterTable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlAlterTable origin, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
