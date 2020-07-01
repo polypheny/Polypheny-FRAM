@@ -48,7 +48,7 @@ buildscript {
         classpath group: 'de.undercouch', name: 'gradle-download-task', version: '4.0.4'
 
         // Gradle Test Logger Plugin (https://github.com/radarsh/gradle-test-logger-plugin, Apache 2.0)
-        classpath group: 'com.adarshr', name: 'gradle-test-logger-plugin', version: '2.0.0'
+        classpath group: 'com.adarshr', name: 'gradle-test-logger-plugin', version: '2.1.0'
     }
 
     ant.taskdef(name: 'fmpp', classname: 'fmpp.tools.AntTask', classpath: buildscript.configurations.classpath.asPath)
