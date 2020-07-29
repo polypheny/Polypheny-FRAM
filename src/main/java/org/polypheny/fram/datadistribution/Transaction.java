@@ -18,12 +18,16 @@ package org.polypheny.fram.datadistribution;
 
 
 import java.io.Serializable;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Spliterator;
 import java.util.function.Consumer;
+import javax.transaction.xa.Xid;
 import lombok.EqualsAndHashCode;
 import org.polypheny.fram.datadistribution.Transaction.Action;
 
@@ -31,15 +35,47 @@ import org.polypheny.fram.datadistribution.Transaction.Action;
 @EqualsAndHashCode(doNotUseGetters = true, onlyExplicitlyIncluded = true)
 public class Transaction implements Iterable<Action>, Serializable {
 
+    private static final Map<ByteBuffer, Transaction> TRANSACTIONS = new HashMap<>();
+
+
+    public static Transaction getTransaction( final Xid xid ) {
+        synchronized ( TRANSACTIONS ) {
+            return TRANSACTIONS.computeIfAbsent( ByteBuffer.wrap( xid.getGlobalTransactionId() ), ( __ ) -> new Transaction( xid ) );
+        }
+    }
+
+
+    public static Transaction removeTransaction( final Transaction transaction ) {
+        synchronized ( TRANSACTIONS ) {
+            return TRANSACTIONS.remove( ByteBuffer.wrap( transaction.id ) );
+        }
+    }
+
+
+    private final byte[] id = new byte[javax.transaction.xa.Xid.MAXBQUALSIZE];
+
     @EqualsAndHashCode.Include
     private final List<Action> actions = new LinkedList<>();
 
-    private boolean containsWriteOperation = false;
+    private volatile boolean containsWriteOperation = false;
+
+
+    private Transaction( final Xid xid ) {
+        final byte[] globalTransactionId = xid.getGlobalTransactionId();
+        System.arraycopy( globalTransactionId, 0, this.id, 0, Math.min( globalTransactionId.length, this.id.length ) );
+    }
 
 
     public void addAction( final Operation operation, final RecordIdentifier record ) {
-        containsWriteOperation |= operation == Operation.WRITE;
+        if ( operation == Operation.WRITE ) {
+            containsWriteOperation = true;
+        }
         actions.add( new Action( operation, record ) );
+    }
+
+
+    public boolean isEmpty() {
+        return actions.isEmpty();
     }
 
 

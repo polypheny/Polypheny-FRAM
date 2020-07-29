@@ -24,11 +24,28 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.polypheny.fram.datadistribution.Transaction.Action;
 
 
 public class Workload implements Serializable {
+
+    public static Workload THIS_IS_A_TEST_REMOVE_ME = new Workload();
+
+
+    static {
+        Timer t = new Timer( true );
+        t.scheduleAtFixedRate( new TimerTask() {
+            @Override
+            public void run() {
+                System.out.println( "WORKLOAD: trx_r=" + THIS_IS_A_TEST_REMOVE_ME.numberOfReadTransactions + " - trx_w=" + THIS_IS_A_TEST_REMOVE_ME.numberOfWriteTransactions );
+            }
+        }, 0, TimeUnit.SECONDS.toMillis( 1 ) );
+    }
+
 
     private final UUID identifier = UUID.randomUUID();
     private final Instant start = Instant.EPOCH;
@@ -55,6 +72,10 @@ public class Workload implements Serializable {
 
 
     public synchronized void addTransaction( final Transaction transaction ) {
+        if ( transaction.isEmpty() ) {
+            return;
+        }
+
         transactions.add( transaction );
         if ( transaction.isReadOnly() ) {
             ++numberOfReadTransactions;

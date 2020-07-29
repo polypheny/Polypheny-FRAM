@@ -17,11 +17,11 @@
 package org.polypheny.fram.standalone;
 
 
-import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import javax.transaction.xa.XAException;
+import org.polypheny.fram.standalone.transaction.TransactionHandle;
 
 
-public interface XAMeta extends org.apache.calcite.avatica.Meta {
+public interface XAMeta extends Meta {
 
     TransactionInfos getOrStartTransaction( final ConnectionInfos connection, final TransactionHandle transactionHandle ) throws XAException;
 

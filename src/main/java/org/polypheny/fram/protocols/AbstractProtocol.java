@@ -86,10 +86,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        final Collection<AbstractRemoteNode> quorum = this.getAllNodes( connection.getCluster() );
-        LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
-
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, quorum );
+        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, this.getAllNodes( connection.getCluster() ) );
 
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
 
@@ -98,7 +95,7 @@ public abstract class AbstractProtocol implements Protocol {
             final Rsp<RemoteExecuteResult> response = responseEntry.getValue();
 
             if ( response.hasException() ) {
-                throw new RemoteException( "Exception at " + remoteNode + " occurred.", response.getException() );
+                throw Utils.wrapException( response.getException() );
             }
 
             remoteResults.put( remoteNode, response.getValue() );
@@ -111,11 +108,16 @@ public abstract class AbstractProtocol implements Protocol {
         return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
             try {
                 return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
+            } catch ( RemoteException ex ) {
+                throw Utils.wrapException( ex );
             }
         } );
     }
+
+
+    public abstract ResultSetInfos prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final PrepareCallback callback ) throws RemoteException;
+
+    public abstract ResultSetInfos prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final PrepareCallback callback ) throws RemoteException;
 
 
     @Override
@@ -128,7 +130,7 @@ public abstract class AbstractProtocol implements Protocol {
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+                throw Utils.wrapException( remoteStatementHandleRsp.getException() );
             }
             remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
@@ -153,7 +155,7 @@ public abstract class AbstractProtocol implements Protocol {
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
         responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
             if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+                throw Utils.wrapException( remoteStatementHandleRsp.getException() );
             }
             remoteResults.put( connection.getCluster().getRemoteNode( address ), remoteStatementHandleRsp.getValue() );
         } );
@@ -166,6 +168,11 @@ public abstract class AbstractProtocol implements Protocol {
             }
         } );
     }
+
+
+    public abstract StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int[] columnIndexes ) throws RemoteException;
+
+    public abstract StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int[] columnIndexes ) throws RemoteException;
 
 
     @Override
@@ -200,7 +207,7 @@ public abstract class AbstractProtocol implements Protocol {
             final RspList<Boolean> prepareCommitResponses = connection.getCluster().prepareCommit( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ), RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), accessedNodes );
             prepareCommitResponses.forEach( ( address, remoteStatementHandleRsp ) -> {
                 if ( remoteStatementHandleRsp.hasException() ) {
-                    throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+                    throw Utils.wrapException( remoteStatementHandleRsp.getException() );
                 }
                 prepareCommitResultHolder.getAndUpdate( prepareCommitResult -> Boolean.logicalAnd( prepareCommitResult, remoteStatementHandleRsp.getValue() ) );
             } );

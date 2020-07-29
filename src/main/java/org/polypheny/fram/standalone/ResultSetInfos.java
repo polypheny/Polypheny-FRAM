@@ -22,8 +22,6 @@ import io.vavr.Function5;
 import java.rmi.RemoteException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
@@ -46,7 +44,7 @@ public abstract class ResultSetInfos {
     }
 
 
-    public abstract List<RemoteMeta> getOrigins();
+    public abstract <ExecuteResultType> Map<RemoteMeta, ExecuteResultType> getOrigins();
 
 
     public abstract <ExecuteResultType> ExecuteResultType getExecuteResult();
@@ -59,18 +57,22 @@ public abstract class ResultSetInfos {
 
     public static class QueryResultSet extends ResultSetInfos {
 
-        private final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+        private final Map<AbstractRemoteNode, RemoteExecuteResult> origins;
         private final ExecuteResult executeResult;
         private final Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
 
 
         public QueryResultSet( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteResult remoteResult ) {
             super( statement );
-            this.origins.put( origin, remoteResult );
+
+            final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+            origins.put( origin, remoteResult );
+            this.origins = Collections.unmodifiableMap( origins );
+
             this.executeResult = remoteResult.toExecuteResult();
-            this.resultsFetchFunction = ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+            this.resultsFetchFunction = ( _origins, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
                 try {
-                    return origin.fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+                    return origin.fetch( RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _offset, _fetchMaxRowCount ).toFrame();
                 } catch ( RemoteException e ) {
                     throw Utils.wrapException( e );
                 }
@@ -80,15 +82,19 @@ public abstract class ResultSetInfos {
 
         public QueryResultSet( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
             super( statement );
-            this.origins.putAll( remoteResults );
+
+            final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+            origins.putAll( remoteResults );
+            this.origins = Collections.unmodifiableMap( origins );
+
             this.executeResult = resultsMergeFunction.apply( this.origins );
             this.resultsFetchFunction = resultsFetchFunction;
         }
 
 
         @Override
-        public List<RemoteMeta> getOrigins() {
-            return Collections.unmodifiableList( new LinkedList<>( this.origins.keySet() ) );
+        public Map<AbstractRemoteNode, RemoteExecuteResult> getOrigins() {
+            return this.origins;
         }
 
 
@@ -115,27 +121,35 @@ public abstract class ResultSetInfos {
 
     public static class BatchResultSetInfos extends ResultSetInfos {
 
-        private final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+        private final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins;
         private final ExecuteBatchResult executeBatchResult;
 
 
         public BatchResultSetInfos( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteBatchResult remoteBatchResult ) {
             super( statement );
-            this.origins.put( origin, remoteBatchResult );
+
+            final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+            origins.put( origin, remoteBatchResult );
+            this.origins = Collections.unmodifiableMap( origins );
+
             this.executeBatchResult = remoteBatchResult.toExecuteBatchResult();
         }
 
 
         public BatchResultSetInfos( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> batchResultsMergeFunction ) {
             super( statement );
-            this.origins.putAll( remoteBatchResults );
+
+            final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+            origins.putAll( remoteBatchResults );
+            this.origins = Collections.unmodifiableMap( origins );
+
             this.executeBatchResult = batchResultsMergeFunction.apply( this.origins );
         }
 
 
         @Override
-        public List<RemoteMeta> getOrigins() {
-            return Collections.unmodifiableList( new LinkedList<>( this.origins.keySet() ) );
+        public Map<AbstractRemoteNode, RemoteExecuteBatchResult> getOrigins() {
+            return this.origins;
         }
 
 

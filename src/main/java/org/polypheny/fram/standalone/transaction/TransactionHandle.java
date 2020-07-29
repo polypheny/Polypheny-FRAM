@@ -111,7 +111,7 @@ public class TransactionHandle implements Xid, Serializable {
      */
     private TransactionHandle( final Xid xid, final UUID nodeId ) {
         //
-        final byte[] otherGlobalTransactionId = xid.getGlobalTransactionId();
+        final byte[] otherGlobalTransactionId = (xid instanceof TransactionHandle) ? ((TransactionHandle) xid).globalTransactionId : xid.getGlobalTransactionId();
         System.arraycopy( otherGlobalTransactionId, 0, this.globalTransactionId, 0, Math.min( otherGlobalTransactionId.length, this.globalTransactionId.length ) );
 
         //

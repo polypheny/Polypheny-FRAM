@@ -22,8 +22,11 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
 import java.io.PrintWriter;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -38,10 +41,15 @@ import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
+import org.apache.calcite.avatica.AvaticaPreparedStatement;
+import org.apache.calcite.avatica.AvaticaUtils;
+import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchConnectionException;
 import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
+import org.apache.calcite.avatica.jdbc.JdbcResultSet;
+import org.apache.calcite.avatica.jdbc.StatementInfo;
 import org.apache.calcite.avatica.remote.TypedValue;
 import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
@@ -53,7 +61,7 @@ import org.slf4j.LoggerFactory;
  */
 public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger( JdbcXAMeta.class );
+    private static final Logger LOG = LoggerFactory.getLogger( JdbcXAMeta.class );
     private static final Executor ABORT_CONNECTION_EXECUTOR = Executors.newCachedThreadPool();
 
     private final UUID storeId;
@@ -87,13 +95,13 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
                 .removalListener( (RemovalListener<String, XAConnection>) notification -> {
                     String connectionId = notification.getKey();
                     XAConnection doomed = notification.getValue();
-                    LOGGER.debug( "Expiring connection {} because {}", connectionId, notification.getCause() );
+                    LOG.debug( "Expiring connection {} because {}", connectionId, notification.getCause() );
                     try {
                         if ( doomed != null ) {
                             doomed.close();
                         }
                     } catch ( Throwable t ) {
-                        LOGGER.info( "Exception thrown while expiring connection {}", connectionId, t );
+                        LOG.info( "Exception thrown while expiring connection {}", connectionId, t );
                     }
                 } )
                 .build();
@@ -114,7 +122,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void openConnection( final ConnectionHandle connectionHandle, final Map<String, String> info ) {
-        LOGGER.trace( "openConnection( connectionHandle: {}, info: {} )", connectionHandle, info );
+        LOG.trace( "openConnection( connectionHandle: {}, info: {} )", connectionHandle, info );
 
         final Properties fullInfo = new Properties();
         fullInfo.putAll( this.settings );
@@ -129,7 +137,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
         // Avoid global synchronization of connection opening
         try {
-            LOGGER.trace( "opening new XAConnection" );
+            LOG.trace( "opening new XAConnection" );
             // todo: check if info.user = settings.user --- if not, then use getXAConnection( String, String )
             XAConnection xaConnection = xaDataSource.getXAConnection( /*fullInfo.getProperty( "user", "SA" ), fullInfo.getProperty( "password", "" )*/ );
             XAConnection loadedXaConnection = xaConnectionCacheAsMap.putIfAbsent( connectionHandle.id, xaConnection );
@@ -150,11 +158,11 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void closeConnection( final ConnectionHandle connectionHandle ) {
-        LOGGER.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
+        LOG.trace( "closeConnection( connectionHandle: {} )", connectionHandle );
 
         final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
         if ( physicalXAConnection == null ) {
-            LOGGER.debug( "client requested close unknown connection {}", connectionHandle );
+            LOG.debug( "client requested close unknown connection {}", connectionHandle );
             return;
         }
 
@@ -180,11 +188,11 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
 
     public void abortConnection( final ConnectionHandle connectionHandle ) {
-        LOGGER.trace( "abortConnection( connectionHandle: {} )", connectionHandle );
+        LOG.trace( "abortConnection( connectionHandle: {} )", connectionHandle );
 
         final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
         if ( physicalXAConnection == null ) {
-            LOGGER.debug( "client requested abortConnection unknown connection {}", connectionHandle );
+            LOG.debug( "client requested abortConnection unknown connection {}", connectionHandle );
             return;
         }
 
@@ -208,17 +216,17 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public TransactionInfos getOrStartTransaction( final ConnectionInfos connection, final TransactionHandle transactionHandle ) throws XAException {
-        LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} )", connection, transactionHandle );
+        LOG.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} )", connection, transactionHandle );
 
         final TransactionInfos result;
         try {
             synchronized ( transactionMap ) {
                 result = transactionMap.computeIfAbsent( transactionHandle, handleOfTransactionToStart -> {
-                    LOGGER.trace( "starting a new transaction ( {} )", handleOfTransactionToStart );
+                    LOG.trace( "starting a new transaction ( {} )", handleOfTransactionToStart );
 
                     final XAConnection xaConnection = xaConnectionCache.getIfPresent( connection.getConnectionHandle().id );
                     if ( xaConnection == null ) {
-                        LOGGER.debug( "client requested SoT on an unknown connection {}", connection );
+                        LOG.debug( "client requested SoT on an unknown connection {}", connection );
                         throw new RuntimeException( "Unknown connection " + connection.getConnectionHandle() );
                     }
 
@@ -231,12 +239,12 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
                     // BEGIN HACK
                     if ( ((org.hsqldb.jdbc.pool.JDBCXAResource) xaResource).withinGlobalTransaction() ) {
-                        LOGGER.warn( "transaction {} - ALREADY STARTED for connection {}", transactionHandle, connection.getConnectionHandle() );
+                        LOG.warn( "transaction {} - ALREADY STARTED for connection {}", transactionHandle, connection.getConnectionHandle() );
                         return new TransactionInfos( connection, handleOfTransactionToStart );
                     }
                     // END HACK
 
-                    LOGGER.trace( "creating transaction {} for connection {}", transactionHandle.getTransactionId(), connection.getConnectionHandle() );
+                    LOG.trace( "creating transaction {} for connection {}", transactionHandle.getTransactionId(), connection.getConnectionHandle() );
 
                     try {
                         xaResource.start( handleOfTransactionToStart, XAResource.TMNOFLAGS );
@@ -258,17 +266,17 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             }
         }
 
-        LOGGER.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} ) = {}", connection, transactionHandle, result );
+        LOG.trace( "getOrStartTransaction( connection: {}, transactionHandle: {} ) = {}", connection, transactionHandle, result );
         return result;
     }
 
 
     @Override
     public void onePhaseCommit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        LOGGER.trace( "onePhaseCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOG.trace( "onePhaseCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
 
         if ( !transactionMap.containsKey( transactionHandle ) ) {
-            LOGGER.warn( "Call of onePhaseCommit() but there is no transaction present." );
+            LOG.warn( "Call of onePhaseCommit() but there is no transaction present." );
             return;
         }
 
@@ -277,7 +285,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                LOGGER.debug( "client requested commit (One Phase) unknown connection {}", connectionHandle );
+                LOG.debug( "client requested commit (One Phase) unknown connection {}", connectionHandle );
                 throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
             }
             xaResource = physicalXAConnection.getXAResource();
@@ -293,16 +301,16 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
         transactionMap.remove( transactionHandle );
 
-        LOGGER.debug( "TRANSACTION {} - COMMITTED (1P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
+        LOG.debug( "TRANSACTION {} - COMMITTED (1P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
     }
 
 
     @Override
     public boolean prepareCommit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        LOGGER.trace( "prepareCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOG.trace( "prepareCommit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
 
         if ( !transactionMap.containsKey( transactionHandle ) ) {
-            LOGGER.warn( "Call of prepareCommit() but there is no transaction present." );
+            LOG.warn( "Call of prepareCommit() but there is no transaction present." );
             return true;
         }
 
@@ -310,7 +318,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                LOGGER.debug( "client requested prepare unknown connection {}", connectionHandle );
+                LOG.debug( "client requested prepare unknown connection {}", connectionHandle );
                 throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
             }
 
@@ -325,7 +333,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             throw new XAException( ex.getMessage() );
         }
 
-        LOGGER.debug( "PREPARE COMMIT for TRANSACTION {} on connection {} = {}", transactionHandle.getTransactionId(), connectionHandle, prepareResult == XAResource.XA_OK ? "SUCCESS" : "FAIL" );
+        LOG.debug( "PREPARE COMMIT for TRANSACTION {} on connection {} = {}", transactionHandle.getTransactionId(), connectionHandle, prepareResult == XAResource.XA_OK ? "SUCCESS" : "FAIL" );
 
         return prepareResult == XAResource.XA_OK;
     }
@@ -333,17 +341,17 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
 
     @Override
     public void commit( final ConnectionHandle connectionHandle, final TransactionHandle transactionHandle ) throws XAException {
-        LOGGER.trace( "commit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOG.trace( "commit( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
 
         if ( !transactionMap.containsKey( transactionHandle ) ) {
-            LOGGER.warn( "Call of commit() but there is no transaction present." );
+            LOG.warn( "Call of commit() but there is no transaction present." );
             return;
         }
 
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                LOGGER.debug( "client requested commit (Two Phase) unknown connection {}", connectionHandle );
+                LOG.debug( "client requested commit (Two Phase) unknown connection {}", connectionHandle );
                 //throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
                 return;
             }
@@ -360,8 +368,8 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
                     case 0: //XA_STATE_INITIAL
                     case 1: //XA_STATE_STARTED
                     case 2: //XA_STATE_ENDED
-                        LOGGER.trace( "ending transaction {}", transactionHandle );
-                        LOGGER.warn( "Unprepared transaction {}. Fallback to One Phase Commit.", transactionHandle.getTransactionId() );
+                        LOG.trace( "ending transaction {}", transactionHandle );
+                        LOG.debug( "Unprepared transaction {}. Fallback to One Phase Commit.", transactionHandle.getTransactionId() );
                         this.onePhaseCommit( connectionHandle, transactionHandle );
                         return;
 
@@ -379,30 +387,30 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             // END HACK
 
             // commit (2PC)
-            LOGGER.trace( "commiting (2P) transaction {}", transactionHandle );
+            LOG.trace( "commiting (2P) transaction {}", transactionHandle );
             xaResource.commit( transactionHandle, false );
             transactionMap.remove( transactionHandle );
         } catch ( SQLException e ) {
             throw new XAException( e.getMessage() );
         }
 
-        LOGGER.debug( "TRANSACTION {} - COMMITTED (2P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
+        LOG.debug( "TRANSACTION {} - COMMITTED (2P) for connection {}", transactionHandle.getTransactionId(), connectionHandle );
     }
 
 
     @Override
     public void rollback( ConnectionHandle connectionHandle, TransactionHandle transactionHandle ) throws XAException {
-        LOGGER.trace( "rollback( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
+        LOG.trace( "rollback( connectionHandle: {}, transactionHandle: {} )", connectionHandle, transactionHandle );
 
         if ( !transactionMap.containsKey( transactionHandle ) ) {
-            LOGGER.warn( "Call of rollback() but there is no transaction present." );
+            LOG.warn( "Call of rollback() but there is no transaction present." );
             return;
         }
 
         try {
             final XAConnection physicalXAConnection = xaConnectionCache.getIfPresent( connectionHandle.id );
             if ( physicalXAConnection == null ) {
-                LOGGER.debug( "client requested rollback unknown connection {}", connectionHandle );
+                LOG.debug( "client requested rollback unknown connection {}", connectionHandle );
                 throw new NoSuchConnectionException( "Unknown connection " + connectionHandle.id );
             }
 
@@ -417,7 +425,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
                 switch ( state ) {
                     case 0: //XA_STATE_INITIAL
                     case 1: //XA_STATE_STARTED
-                        LOGGER.trace( "ending transaction {}", transactionHandle );
+                        LOG.trace( "ending transaction {}", transactionHandle );
                         xaResource.end( transactionHandle, XAResource.TMFAIL );
                         // intended fall through
 
@@ -435,14 +443,14 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             // END HACK
 
             // rollback
-            LOGGER.trace( "rollback transaction {}", transactionHandle );
+            LOG.trace( "rollback transaction {}", transactionHandle );
             xaResource.rollback( transactionHandle );
             transactionMap.remove( transactionHandle );
         } catch ( SQLException e ) {
             throw new XAException( e.getMessage() );
         }
 
-        LOGGER.debug( "TRANSACTION {} - ROLLBACKED for connection {}", transactionHandle.getTransactionId(), connectionHandle );
+        LOG.debug( "TRANSACTION {} - ROLLBACKED for connection {}", transactionHandle.getTransactionId(), connectionHandle );
     }
 
 
@@ -463,7 +471,94 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         if ( maxRowsInFirstFrame == -1 ) {
             maxRowsInFirstFrame = UNLIMITED_COUNT;
         }
-        return super.prepareAndExecute( h, sql, maxRowCount, maxRowsInFirstFrame, callback );
+        //
+        // This implementation is copied from org.apache.calcite.avatica.jdbc.JdbcMeta
+        // and altered to use java.sql.Statement.execute( String sql, int autoGeneratedKeys)
+        //
+        try {
+            final StatementInfo info = getStatementCache().getIfPresent( h.id );
+            if ( info == null ) {
+                throw new NoSuchStatementException( h );
+            }
+            final Statement statement = info.statement;
+
+            // Make sure that we limit the number of rows for the query
+            if ( maxRowCount > 0 ) {
+                AvaticaUtils.setLargeMaxRows( statement, maxRowCount );
+            } else if ( maxRowCount < 0 ) {
+                statement.setMaxRows( 0 );
+            }
+
+            final boolean ret;
+            if ( statement.isWrapperFor( org.hsqldb.jdbc.JDBCStatement.class ) ) {
+                // HSQLDB specific
+                ret = statement.execute( sql, org.hsqldb.jdbc.JDBCStatement.RETURN_PRIMARY_KEYS );
+            } else {
+                ret = statement.execute( sql );
+            }
+
+            info.setResultSet( statement.getResultSet() );
+            // Either execute(sql) returned true or the resultSet was null
+            assert ret || null == info.getResultSet();
+            final List<MetaResultSet> resultSets = new ArrayList<>();
+            if ( null == info.getResultSet() ) {
+                // Create a special result set that just carries update count
+                resultSets.add( JdbcResultSet.count( h.connectionId, h.id, AvaticaUtils.getLargeUpdateCount( statement ) ) );
+            } else {
+                resultSets.add( JdbcResultSet.create( h.connectionId, h.id, info.getResultSet(), maxRowsInFirstFrame ) );
+            }
+            LOG.trace( "prepAndExec statement {}", h );
+            // TODO: review client to ensure statementId is updated when appropriate
+            return new ExecuteResult( resultSets );
+        } catch ( SQLException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public ExecuteResult prepareAndExecute( StatementHandle h, String sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback, int[] columnIndexes ) throws NoSuchStatementException {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        if ( maxRowsInFirstFrame == -1 ) {
+            maxRowsInFirstFrame = UNLIMITED_COUNT;
+        }
+        //
+        // This implementation is copied from org.apache.calcite.avatica.jdbc.JdbcMeta
+        // and altered to use java.sql.Statement.execute( String sql, int[] columnIndexes)
+        //
+        try {
+            final StatementInfo info = super.getStatementCache().getIfPresent( h.id );
+            if ( info == null ) {
+                throw new NoSuchStatementException( h );
+            }
+            final Statement statement = info.statement;
+
+            // Make sure that we limit the number of rows for the query
+            if ( maxRowCount > 0 ) {
+                AvaticaUtils.setLargeMaxRows( statement, maxRowCount );
+            } else if ( maxRowCount < 0 ) {
+                statement.setMaxRows( 0 );
+            }
+
+            boolean ret = statement.execute( sql, columnIndexes );
+            info.setResultSet( statement.getResultSet() );
+            // Either execute(sql) returned true or the resultSet was null
+            assert ret || null == info.getResultSet();
+            final List<MetaResultSet> resultSets = new ArrayList<>();
+            if ( null == info.getResultSet() ) {
+                // Create a special result set that just carries update count
+                resultSets.add( JdbcResultSet.count( h.connectionId, h.id, AvaticaUtils.getLargeUpdateCount( statement ) ) );
+            } else {
+                resultSets.add( JdbcResultSet.create( h.connectionId, h.id, info.getResultSet(), maxRowsInFirstFrame ) );
+            }
+            LOG.trace( "prepAndExec statement {}", h );
+
+            return new ExecuteResult( resultSets );
+        } catch ( SQLException e ) {
+            throw new RuntimeException( e );
+        }
     }
 
 
@@ -472,7 +567,81 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
         if ( maxRowCount == -1 ) {
             maxRowCount = UNLIMITED_COUNT;
         }
-        return super.prepare( ch, sql, maxRowCount );
+        //
+        // This implementation is copied from org.apache.calcite.avatica.jdbc.JdbcMeta
+        // and altered to use java.sql.Connection.prepareStatement( String sql, int autoGeneratedKeys)
+        //
+        try {
+            final Connection conn = getConnection( ch.id );
+            final PreparedStatement statement;
+            if ( conn.isWrapperFor( org.hsqldb.jdbc.JDBCConnection.class ) ) {
+                // HSQLDB specific
+                statement = conn.prepareStatement( sql, org.hsqldb.jdbc.JDBCStatement.RETURN_PRIMARY_KEYS );
+            } else {
+                statement = conn.prepareStatement( sql );
+            }
+
+            final int id = getStatementIdGenerator().getAndIncrement();
+            Meta.StatementType statementType = null;
+            if ( statement.isWrapperFor( AvaticaPreparedStatement.class ) ) {
+                final AvaticaPreparedStatement avaticaPreparedStatement;
+                avaticaPreparedStatement = statement.unwrap( AvaticaPreparedStatement.class );
+                statementType = avaticaPreparedStatement.getStatementType();
+            }
+
+            // Set the maximum number of rows
+            // Special handling of maxRowCount as JDBC 0 is unlimited, our meta 0 row
+            if ( maxRowCount > 0 ) {
+                AvaticaUtils.setLargeMaxRows( statement, maxRowCount );
+            } else if ( maxRowCount < 0 ) {
+                statement.setMaxRows( 0 );
+            }
+
+            getStatementCache().put( id, new StatementInfo( statement ) );
+            StatementHandle h = new StatementHandle( ch.id, id, signature( statement.getMetaData(), statement.getParameterMetaData(), sql, statementType ) );
+            LOG.trace( "prepared statement {}", h );
+            return h;
+        } catch ( SQLException e ) {
+            throw new RuntimeException( e );
+        }
+    }
+
+
+    @Override
+    public StatementHandle prepare( ConnectionHandle ch, String sql, long maxRowCount, int[] columnIndexes ) {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        //
+        // This implementation is copied from org.apache.calcite.avatica.jdbc.JdbcMeta
+        // and altered to use java.sql.Connection.prepareStatement( String sql, int[] columnIndexes)
+        //
+        try {
+            final Connection conn = super.getConnection( ch.id );
+            final PreparedStatement statement = conn.prepareStatement( sql, columnIndexes );
+            final int id = super.getStatementIdGenerator().getAndIncrement();
+            Meta.StatementType statementType = null;
+            if ( statement.isWrapperFor( AvaticaPreparedStatement.class ) ) {
+                final AvaticaPreparedStatement avaticaPreparedStatement;
+                avaticaPreparedStatement = statement.unwrap( AvaticaPreparedStatement.class );
+                statementType = avaticaPreparedStatement.getStatementType();
+            }
+
+            // Set the maximum number of rows
+            // Special handling of maxRowCount as JDBC 0 is unlimited, our meta 0 row
+            if ( maxRowCount > 0 ) {
+                AvaticaUtils.setLargeMaxRows( statement, maxRowCount );
+            } else if ( maxRowCount < 0 ) {
+                statement.setMaxRows( 0 );
+            }
+
+            super.getStatementCache().put( id, new StatementInfo( statement ) );
+            StatementHandle h = new StatementHandle( ch.id, id, signature( statement.getMetaData(), statement.getParameterMetaData(), sql, statementType ) );
+            LOG.trace( "prepared statement {}", h );
+            return h;
+        } catch ( SQLException e ) {
+            throw new RuntimeException( e );
+        }
     }
 
 
@@ -500,6 +669,46 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             fetchMaxRowCount = UNLIMITED_COUNT;
         }
         return super.fetch( h, offset, fetchMaxRowCount );
+    }
+
+
+    @Override
+    public ExecuteResult getGeneratedKeys( StatementHandle h, long maxRowCount, int maxRowsInFirstFrame ) throws NoSuchStatementException {
+        if ( maxRowCount == -1 ) {
+            maxRowCount = UNLIMITED_COUNT;
+        }
+        if ( maxRowsInFirstFrame == -1 ) {
+            maxRowsInFirstFrame = UNLIMITED_COUNT;
+        }
+        //
+        // This implementation is inspired by org.apache.calcite.avatica.jdbc.JdbcMeta
+        // and altered to use java.sql.Statement.execute( String sql, int[] columnIndexes)
+        //
+        try {
+            final StatementInfo info = getStatementCache().getIfPresent( h.id );
+            if ( info == null ) {
+                throw new NoSuchStatementException( h );
+            }
+            final Statement statement = info.statement;
+            // Make sure that we limit the number of rows for the query
+            if ( maxRowCount > 0 ) {
+                AvaticaUtils.setLargeMaxRows( statement, maxRowCount );
+            } else if ( maxRowCount < 0 ) {
+                statement.setMaxRows( 0 );
+            }
+
+            info.setResultSet( statement.getGeneratedKeys() );
+            // JDBC Specification: "Retrieves any auto-generated keys created as a result of executing this Statement object. If this Statement object did not generate any keys, an empty ResultSet object is returned."
+            assert null != info.getResultSet();
+
+            final List<MetaResultSet> resultSets = new ArrayList<>();
+            resultSets.add( JdbcResultSet.create( h.connectionId, h.id, info.getResultSet(), maxRowsInFirstFrame ) );
+            LOG.trace( "getGeneratedKeys statement {}", h );
+
+            return new ExecuteResult( resultSets );
+        } catch ( SQLException e ) {
+            throw new RuntimeException( e );
+        }
     }
 
 

@@ -42,8 +42,8 @@ public class RecordIdentifier implements Serializable {
         if ( table == null || table.isEmpty() ) {
             throw new IllegalArgumentException( "table == null || table.isEmpty()" );
         }
-        if ( key == null || key.length == 0 || key[0] == null ) {
-            throw new IllegalArgumentException( "key == null || key.length == 0 || key[0] == null" );
+        if ( key == null || key.length == 0 ) {
+            throw new IllegalArgumentException( "key == null || key.length == 0" );
         }
 
         this.catalog = catalog;

@@ -32,6 +32,7 @@ import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
+import org.polypheny.fram.datadistribution.WorkloadAnalyzer;
 import org.polypheny.fram.protocols.allocation.AllocationModule;
 import org.polypheny.fram.protocols.fragmentation.FragmentationModule;
 import org.polypheny.fram.protocols.fragmentation.HorizontalHashFragmentation;
@@ -39,6 +40,7 @@ import org.polypheny.fram.protocols.migration.MigrationModule;
 import org.polypheny.fram.protocols.replication.QuorumReplication;
 import org.polypheny.fram.protocols.replication.ReplicationModule;
 import org.polypheny.fram.standalone.ConnectionInfos;
+import org.polypheny.fram.standalone.Main;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
@@ -57,7 +59,7 @@ public enum Protocols implements Protocol {
     ;
 
 
-    Protocols( Protocol... protocolChain ) {
+    Protocols( AbstractProtocol... protocolChain ) {
         if ( Objects.requireNonNull( protocolChain ).length == 0 ) {
             throw new IllegalArgumentException( "Empty array protocolChain." );
         }
@@ -65,15 +67,22 @@ public enum Protocols implements Protocol {
         if ( protocolChain.length > 1 ) {
             // we need to link them together
             for ( int index = 0; (index + 1) < protocolChain.length; /* incremented in the loop */ ) {
-                final Protocol current = protocolChain[index];
-                final Protocol next = protocolChain[++index]; // index increment
+                final AbstractProtocol current = protocolChain[index];
+                final AbstractProtocol next = protocolChain[++index]; // index increment
 
                 current.setDown( next );
                 next.setUp( current );
             }
         }
 
-        this.delegate = protocolChain[0];
+        final com.typesafe.config.Config configuration = Main.configuration();
+        final boolean enableWorkloadAnalyzer = configuration.getBoolean( "standalone.datastore.getGeneratedKeys.implemented_for_dmql" );
+
+        if ( enableWorkloadAnalyzer ) {
+            this.delegate = new WorkloadAnalyzer( protocolChain[0] );
+        } else {
+            this.delegate = protocolChain[0];
+        }
     }
 
 

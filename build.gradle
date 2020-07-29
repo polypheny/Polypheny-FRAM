@@ -124,6 +124,9 @@ repositories {
     mavenCentral()
     jcenter()
     maven { url 'https://nexus.dmi.unibas.ch/repository/maven2/' }
+    flatDir {
+        dirs 'lib'
+    }
 }
 
 
@@ -147,7 +150,7 @@ dependencies {
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
     // HSQLDB (BSD)
-    standaloneImplementation group: 'org.hsqldb', name: 'hsqldb', version: '2.5.0'
+    standaloneImplementation name: 'hsqldb-2.5.2-SNAPSHOT'
     // Log4j (Apache 2.0)
     standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4jVersion
     standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4jVersion

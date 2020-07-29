@@ -57,7 +57,19 @@ class PolyphenyDbNode extends AbstractLocalNode {
 
 
     @Override
+    public RemoteStatementHandle prepare( RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes ) throws RemoteException {
         return null;
     }
 

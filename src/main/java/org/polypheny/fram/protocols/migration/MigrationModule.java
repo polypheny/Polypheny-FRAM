@@ -77,7 +77,19 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
         return null;
     }
 
@@ -101,7 +113,19 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
         return null;
     }
 

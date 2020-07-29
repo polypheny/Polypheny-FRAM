@@ -356,6 +356,12 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection );
         LOGGER.trace( "prepareAndExecute[DataQuery] on {}", quorum );
@@ -384,6 +390,12 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
                 throw Utils.wrapException( e );
             }
         } );
+    }
+
+
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -506,6 +518,12 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
 
     @Override
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection );
         LOGGER.trace( "prepare[DataQuery] on {}", quorum );
@@ -529,6 +547,12 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             return remoteStatements.values().iterator().next().toStatementHandle().signature;
             // END HACK
         } );
+    }
+
+
+    @Override
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 

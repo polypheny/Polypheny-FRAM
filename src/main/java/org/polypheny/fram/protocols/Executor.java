@@ -31,6 +31,7 @@ import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlSelect;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
@@ -73,7 +74,19 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
         return null;
     }
 
@@ -97,7 +110,45 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        return null;
+    }
+
+
+    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+
+        switch ( sql.getKind() ) {
+            // See org.apache.calcite.sql.SqlKind.QUERY
+            case SELECT:
+                return prepareDataQuerySelect( connection, statement, (SqlSelect) sql, maxRowCount );
+
+            case UNION:
+            case INTERSECT:
+            case EXCEPT:
+            case VALUES:
+            case WITH:
+            case ORDER_BY:
+            case EXPLICIT_TABLE:
+            default:
+                throw new UnsupportedOperationException( "Not supported." );
+        }
+
+    }
+
+
+    protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    protected StatementInfos prepareDataQuerySelectAggregate( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    @Override
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
         return null;
     }
 

@@ -64,7 +64,6 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
-import org.apache.calcite.sql.util.SqlVisitor;
 import org.jgroups.Address;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
@@ -85,6 +84,7 @@ import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.polypheny.fram.standalone.Utils;
 import org.polypheny.fram.standalone.Utils.WrappingException;
+import org.polypheny.fram.standalone.parser.sql.SqlNodeUtils;
 
 
 public class HorizontalHashFragmentation extends AbstractProtocol implements FragmentationProtocol {
@@ -108,7 +108,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     }
 
 
-    protected Map<String, Integer> lookupPrimaryKeyColumnsNamesAndIndexes( final ConnectionInfos connection, final SqlIdentifier table ) {
+    protected Map<String, Integer> lookupPrimaryKeyColumnNamesAndIndexes( final ConnectionInfos connection, final SqlIdentifier table ) {
         final String catalogName;
         final String schemaName;
         final String tableName;
@@ -151,7 +151,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     protected List<Integer> lookupPrimaryKeyColumnsIndexes( final ConnectionInfos connection, final SqlIdentifier table ) {
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         List<Integer> primaryKeyColumnsIndexes = new ArrayList<>( primaryKeyColumnsNamesAndIndexes.values().size() );
         primaryKeyColumnsIndexes.addAll( primaryKeyColumnsNamesAndIndexes.values() );
         Collections.sort( primaryKeyColumnsIndexes );
@@ -255,6 +255,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
 
@@ -324,7 +330,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             }
         } );
 
-        final Map<String, Integer> primaryKeysColumnIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeysColumnIndexes = lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         if ( primaryKeysColumnIndexes.size() > 1 ) {
             // Composite primary key
             throw new UnsupportedOperationException( "Not implemented yet." );
@@ -334,6 +340,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         final SqlNode condition = sql.getWhere();
 
         if ( condition == null ) {
+            // Table scan
             final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
 
             final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
@@ -446,6 +453,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     }
 
 
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
     /*
      *
      */
@@ -480,12 +493,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
         final SqlNodeList targetColumns = sql.getTargetColumnList();
 
-        final Map<String, Integer> primaryKeyNameAndIndex = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyNameAndIndex = this.lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyNameAndIndex.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
         if ( targetColumns == null || targetColumns.size() == 0 ) {
-            // The insert statement has to provide values for every column in the order of the colums
+            // The insert statement has to provide values for every column in the order of the columns
             // Thus, we can use the indexes of the primary key columns to find their corresponding values
             for ( int primaryKeyColumnIndex : primaryKeyColumnsIndexes ) {
                 // The primary key FOO with the column index 2
@@ -556,13 +569,18 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     protected StatementInfos prepareDataManipulationDelete( ConnectionInfos connection, StatementInfos statement, SqlDelete sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataManipulationDelete( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
+        if ( SqlNodeUtils.DELETE_UTILS.whereConditionContainsOnlyEquals( sql ) ) {
+            // Currently only primary_key EQUALS ? is supported
+            throw new UnsupportedOperationException( "Not supported yet." );
+        }
+
         final SqlIdentifier table = (SqlIdentifier) sql.getTargetTable();
 
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
-        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+        final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
 
         for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
             // for every primary key and its index in the table
@@ -592,64 +610,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             // END HACK
         } );
 
-        if ( sql.getCondition().accept( new SqlBasicVisitor<Boolean>() {
-            @Override
-            public Boolean visit( SqlCall call ) {
-                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
-                for ( SqlNode n : call.getOperandList() ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlNodeList nodeList ) {
-                boolean containsNotOnlyEquals = false;
-                for ( SqlNode n : nodeList ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIdentifier id ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlLiteral literal ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
-                throw new UnsupportedOperationException( "Not implemented yet." );
-            }
-
-
-            @Override
-            public Boolean visit( SqlDataTypeSpec type ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlDynamicParam param ) {
-                return false;
-            }
-        } ) ) {
-            // Currently only primary_key EQUALS ? is supported
-            throw new UnsupportedOperationException( "Not supported yet." );
-        }
-
         this.executionTargetsFunctions.put( preparedStatement, ( clusterMembers, parameterValues ) -> {
             final AbstractRemoteNode[] executionTargets = clusterMembers.toArray( new AbstractRemoteNode[clusterMembers.size()] );
             final Object[] primaryKeyValues = new Object[primaryKeyColumnsIndexes.size()];
@@ -672,7 +632,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         final SqlNodeList targetColumns = sql.getTargetColumnList();
         final SqlNode condition = sql.getCondition();
 
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
@@ -696,7 +656,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             throw new UnsupportedOperationException( "Not implemented yet." );
         }
 
-        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+        final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
 
         boolean allPrimaryKeyColumnsAreInTheCondition = true;
         for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
@@ -727,8 +687,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         } else {
             executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
         }
-
-        final int numberOfDynamicParameters = targetColumns.accept( new SqlDynamicParamsCounter() ) + condition.accept( new SqlDynamicParamsCounter() );
 
         // updates need to go everywhere
         final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
@@ -812,6 +770,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataQuery( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
@@ -836,88 +800,18 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataQuerySelect( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
-        if ( sql.getSelectList().accept( new SqlVisitor<Boolean>() {
-            @Override
-            public Boolean visit( SqlNodeList nodeList ) {
-                boolean isAggregate = false;
-                for ( SqlNode n : nodeList.getList() ) {
-                    isAggregate |= n.accept( this );
-                }
-                return isAggregate;
-            }
-
-
-            @Override
-            public Boolean visit( SqlLiteral literal ) {
-                return Boolean.FALSE;
-            }
-
-
-            @Override
-            public Boolean visit( SqlCall call ) {
-                if ( call.isA( SqlKind.AGGREGATE ) ) {
-                    return Boolean.TRUE;
-                }
-
-                boolean isAggregate = false;
-                for ( SqlNode n : call.getOperandList() ) {
-                    isAggregate |= n.accept( this );
-                }
-                return isAggregate;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIdentifier id ) {
-                return Boolean.FALSE;
-            }
-
-
-            @Override
-            public Boolean visit( SqlDataTypeSpec type ) {
-                return Boolean.FALSE;
-            }
-
-
-            @Override
-            public Boolean visit( SqlDynamicParam param ) {
-                return Boolean.FALSE;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
-                return Boolean.FALSE;
-            }
-        } ) ) {
+        if ( SqlNodeUtils.SELECT_UTILS.selectListContainsAggregate( sql ) ) {
             // SELECT MIN/MAX/AVG/ FROM ...
             return prepareDataQuerySelectAggregate( connection, statement, sql, maxRowCount );
         }
 
-        final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
-            @Override
-            public SqlIdentifier visit( SqlIdentifier id ) {
-                return id;
-            }
+        final SqlIdentifier table = SqlNodeUtils.SELECT_UTILS.getTargetTable( sql );
 
-
-            @Override
-            public SqlIdentifier visit( SqlCall call ) {
-                switch ( call.getKind() ) {
-                    case AS:
-                        return call.operand( 0 );
-
-                    default:
-                        return super.visit( call );
-                }
-            }
-        } );
-
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
-        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+        final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
 
         boolean incompletePrimaryKey = false;
         for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
@@ -951,63 +845,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
         final Function2<List<AbstractRemoteNode>, List<TypedValue>, List<AbstractRemoteNode>> executionTargetsFunction;
         // todo: improve. Only the primary keys are relevant
-        if ( sql.getWhere().accept( new SqlBasicVisitor<Boolean>() {
-            @Override
-            public Boolean visit( SqlCall call ) {
-                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
-                for ( SqlNode n : call.getOperandList() ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlNodeList nodeList ) {
-                boolean containsNotOnlyEquals = false;
-                for ( SqlNode n : nodeList ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIdentifier id ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlLiteral literal ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
-                throw new UnsupportedOperationException( "Not implemented yet." );
-            }
-
-
-            @Override
-            public Boolean visit( SqlDataTypeSpec type ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlDynamicParam param ) {
-                return false;
-            }
-        } ) ) {
-            // We need to scan and thus the query needs to go to all nodes
-            executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
-        } else {
+        if ( SqlNodeUtils.SELECT_UTILS.whereConditionContainsOnlyEquals( sql ) ) {
             // It seems that we only have EQUALS in our WHERE condition
             if ( final_incompletePrimaryKey ) {
                 executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
@@ -1023,6 +861,9 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                     return Arrays.asList( executionTargets[executionTargetIndex] );
                 };
             }
+        } else {
+            // We need to scan and thus the query needs to go to all nodes
+            executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
         }
 
         this.executionTargetsFunctions.put( preparedStatement, executionTargetsFunction );
@@ -1039,30 +880,13 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         //FROM `PUBLIC`.`NEW_ORDER` AS `NEW_ORDER`
         //WHERE `NEW_ORDER`.`NO_D_ID` = ? AND `NEW_ORDER`.`NO_W_ID` = ?
 
-        final SqlIdentifier table = (SqlIdentifier) sql.getFrom().accept( new SqlBasicVisitor<SqlIdentifier>() {
-            @Override
-            public SqlIdentifier visit( SqlIdentifier id ) {
-                return id;
-            }
+        final SqlIdentifier table = SqlNodeUtils.SELECT_UTILS.getTargetTable( sql );
 
-
-            @Override
-            public SqlIdentifier visit( SqlCall call ) {
-                switch ( call.getKind() ) {
-                    case AS:
-                        return call.operand( 0 );
-
-                    default:
-                        return super.visit( call );
-                }
-            }
-        } );
-
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnsNamesAndIndexes( connection, table );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = this.lookupPrimaryKeyColumnNamesAndIndexes( connection, table );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnsNamesAndIndexes.values() );
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
-        final Map<String, Integer> columnNamesToParameterIndexes = sql.accept( new ColumnsNameToParametersIndexMapper() );
+        final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
 
         boolean incompletePrimaryKey = false;
         for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnsNamesAndIndexes.entrySet() ) {
@@ -1096,69 +920,16 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
         final Function2<List<AbstractRemoteNode>, List<TypedValue>, List<AbstractRemoteNode>> executionTargetsFunction;
         // todo: improve. Only the primary keys are relevant
-        if ( sql.getWhere().accept( new SqlBasicVisitor<Boolean>() {
-            @Override
-            public Boolean visit( SqlCall call ) {
-                boolean containsNotOnlyEquals = call.isA( EnumSet.of( SqlKind.NOT_EQUALS, SqlKind.GREATER_THAN, SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.LESS_THAN, SqlKind.LESS_THAN_OR_EQUAL, SqlKind.IS_DISTINCT_FROM, SqlKind.IS_NOT_DISTINCT_FROM ) );
-                for ( SqlNode n : call.getOperandList() ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlNodeList nodeList ) {
-                boolean containsNotOnlyEquals = false;
-                for ( SqlNode n : nodeList ) {
-                    if ( n != null ) {
-                        containsNotOnlyEquals |= n.accept( this );
-                    }
-                }
-                return containsNotOnlyEquals;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIdentifier id ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlLiteral literal ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlIntervalQualifier intervalQualifier ) {
-                throw new UnsupportedOperationException( "Not implemented yet." );
-            }
-
-
-            @Override
-            public Boolean visit( SqlDataTypeSpec type ) {
-                return false;
-            }
-
-
-            @Override
-            public Boolean visit( SqlDynamicParam param ) {
-                return false;
-            }
-        } ) ) {
-            // We need to scan and thus the query needs to go to all nodes
-            executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
-        } else {
+        if ( SqlNodeUtils.SELECT_UTILS.whereConditionContainsOnlyEquals( sql ) ) {
             // It seems that we only have EQUALS in our WHERE condition
             if ( final_incompletePrimaryKey ) {
                 executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
             } else {
                 throw new UnsupportedOperationException( "Not implemented yet." );
             }
+        } else {
+            // We need to scan and thus the query needs to go to all nodes
+            executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
         }
 
         final SqlNodeList selectList = sql.getSelectList();
@@ -1193,8 +964,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                         final Rsp<RemoteExecuteResult> remoteExecuteResultRsp = e.getValue();
 
                         if ( remoteExecuteResultRsp.hasException() ) {
-                            final Throwable t = remoteExecuteResultRsp.getException();
-                            throw Utils.wrapException( t );
+                            throw Utils.wrapException( remoteExecuteResultRsp.getException() );
                         }
 
                         final AbstractRemoteNode currentRemote = exConnection.getCluster().getRemoteNode( address );
@@ -1253,8 +1023,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                         final Rsp<RemoteExecuteResult> remoteExecuteResultRsp = e.getValue();
 
                         if ( remoteExecuteResultRsp.hasException() ) {
-                            final Throwable t = remoteExecuteResultRsp.getException();
-                            throw Utils.wrapException( t );
+                            throw Utils.wrapException( remoteExecuteResultRsp.getException() );
                         }
 
                         final AbstractRemoteNode currentRemote = exConnection.getCluster().getRemoteNode( address );
@@ -1307,6 +1076,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         this.executionTargetsFunctions.put( preparedStatement, executionTargetsFunction );
 
         return preparedStatement;
+    }
+
+
+    @Override
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -1482,140 +1257,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     @Override
     public ReplicationProtocol setReplicationProtocol( ReplicationProtocol replicationProtocol ) {
         throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    private static class SqlDynamicParamsCounter extends SqlBasicVisitor<Integer> {
-
-        @Override
-        public Integer visit( SqlNodeList nodeList ) {
-            int numberOfParameters = 0;
-            for ( SqlNode node : nodeList ) {
-                numberOfParameters += node.accept( this );
-            }
-            return numberOfParameters;
-        }
-
-
-        @Override
-        public Integer visit( SqlCall call ) {
-            int numberOfParameters = 0;
-            for ( SqlNode node : call.getOperandList() ) {
-                numberOfParameters += node.accept( this );
-            }
-            return numberOfParameters;
-        }
-
-
-        @Override
-        public Integer visit( SqlDynamicParam param ) {
-            return 1;
-        }
-
-
-        @Override
-        public Integer visit( SqlLiteral literal ) {
-            return 0;
-        }
-
-
-        @Override
-        public Integer visit( SqlIdentifier id ) {
-            return 0;
-        }
-
-
-        @Override
-        public Integer visit( SqlDataTypeSpec type ) {
-            return 0;
-        }
-
-
-        @Override
-        public Integer visit( SqlIntervalQualifier intervalQualifier ) {
-            throw new UnsupportedOperationException( "Not implemented yet." );
-        }
-    }
-
-
-    private static class ColumnsNameToParametersIndexMapper extends SqlBasicVisitor<Map<String, Integer>> {
-
-        @Override
-        public Map<String, Integer> visit( SqlNodeList nodeList ) {
-            Map<String, Integer> m = new HashMap<>();
-            for ( SqlNode n : nodeList ) {
-                m.putAll( n.accept( this ) );
-            }
-            return m;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlCall call ) {
-            Map<String, Integer> m = new HashMap<>();
-            if ( call.isA( SqlKind.BINARY_COMPARISON ) ) {
-                if ( call.operand( 0 ).isA( EnumSet.of( SqlKind.IDENTIFIER ) ) && call.operand( 1 ).isA( EnumSet.of( SqlKind.DYNAMIC_PARAM ) ) ) {
-                    final SqlIdentifier column = call.<SqlIdentifier>operand( 0 );
-                    final int dynamicParameterIndex = call.<SqlDynamicParam>operand( 1 ).getIndex();
-                    if ( column.isSimple() ) {
-                        m.put( column.getSimple(), dynamicParameterIndex );
-                    } else {
-                        m.put( column.names.reverse().get( 0 ), dynamicParameterIndex );
-                    }
-                } else if ( call.operand( 0 ).isA( EnumSet.of( SqlKind.DYNAMIC_PARAM ) ) && call.operand( 1 ).isA( EnumSet.of( SqlKind.IDENTIFIER ) ) ) {
-                    final SqlIdentifier column = call.<SqlIdentifier>operand( 1 );
-                    final int dynamicParameterIndex = call.<SqlDynamicParam>operand( 0 ).getIndex();
-                    if ( column.isSimple() ) {
-                        m.put( column.getSimple(), dynamicParameterIndex );
-                    } else {
-                        m.put( column.names.reverse().get( 0 ), dynamicParameterIndex );
-                    }
-                } else {
-                    for ( SqlNode n : call.getOperandList() ) {
-                        if ( n != null ) {
-                            m.putAll( n.accept( this ) );
-                        }
-                    }
-                }
-            } else {
-                for ( SqlNode n : call.getOperandList() ) {
-                    if ( n != null ) {
-                        m.putAll( n.accept( this ) );
-                    }
-                }
-            }
-            return m;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlIdentifier id ) {
-            return Collections.EMPTY_MAP;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlLiteral literal ) {
-            return Collections.EMPTY_MAP;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlIntervalQualifier intervalQualifier ) {
-            return Collections.EMPTY_MAP;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlDataTypeSpec type ) {
-            return Collections.EMPTY_MAP;
-        }
-
-
-        @Override
-        public Map<String, Integer> visit( SqlDynamicParam param ) {
-            return Collections.EMPTY_MAP;
-        }
     }
 
 

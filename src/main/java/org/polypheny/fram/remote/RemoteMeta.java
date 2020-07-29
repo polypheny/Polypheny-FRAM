@@ -58,6 +58,17 @@ public interface RemoteMeta extends java.rmi.Remote {
     RemoteStatementHandle prepare( RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount ) throws RemoteException;
 
     /**
+     * Prepares a statement.
+     *
+     * @param remoteStatementHandle Statement handle
+     * @param sql SQL query
+     * @param maxRowCount Negative for no limit (different meaning than JDBC)
+     * @param columnIndexes An array of column indexes indicating the columns that should be returned from the inserted row or rows
+     * @return Signature of prepared statement
+     */
+    RemoteStatementHandle prepare( RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int[] columnIndexes ) throws RemoteException;
+
+    /**
      * Prepares and executes a statement.
      *
      * @param remoteTransactionHandle (Global) transaction identifier
@@ -71,6 +82,22 @@ public interface RemoteMeta extends java.rmi.Remote {
      * first frame of data
      */
     RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException;
+
+    /**
+     * Prepares and executes a statement.
+     *
+     * @param remoteTransactionHandle (Global) transaction identifier
+     * @param sql SQL query
+     * @param maxRowCount Maximum number of rows for the entire query. Negative for no limit
+     * (different meaning than JDBC).
+     * @param maxRowsInFirstFrame Maximum number of rows for the first frame. This value should
+     * always be less than or equal to {@code maxRowCount} as the number of results are guaranteed
+     * to be restricted by {@code maxRowCount} and the underlying database.
+     * @param columnIndexes An array of column indexes indicating the columns that should be returned from the inserted row or rows
+     * @return Result containing statement ID, and if a query, a result set and
+     * first frame of data
+     */
+    RemoteExecuteResult prepareAndExecute( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes ) throws RemoteException;
 
     /**
      * Prepares and executes a statement.
@@ -248,10 +275,12 @@ public interface RemoteMeta extends java.rmi.Remote {
         ONE_PHASE_COMMIT( (short) 31, "onePhaseCommit", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
         ROLLBACK( (short) 40, "rollback", RemoteConnectionHandle.class, RemoteTransactionHandle.class ),
         PREPARE( (short) 50, "prepare", RemoteStatementHandle.class, String.class, long.class ),
+        PREPARE2( (short) 51, "prepare", RemoteStatementHandle.class, String.class, long.class, int[].class ),
         EXECUTE( (short) 60, "execute", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class, int.class ),
         PREPARE_AND_EXECUTE( (short) 70, "prepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class ),
-        PREPARE_AND_EXECUTE_DATA_DEFINITION( (short) 71, "prepareAndExecuteDataDefinition", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, String.class, long.class, int.class ),
-        PREPARE_AND_EXECUTE_BATCH( (short) 75, "prepareAndExecuteBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
+        PREPARE_AND_EXECUTE2( (short) 71, "prepareAndExecute", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, long.class, int.class, int[].class ),
+        PREPARE_AND_EXECUTE_DATA_DEFINITION( (short) 75, "prepareAndExecuteDataDefinition", RemoteTransactionHandle.class, RemoteStatementHandle.class, String.class, String.class, long.class, int.class ),
+        PREPARE_AND_EXECUTE_BATCH( (short) 79, "prepareAndExecuteBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         EXECUTE_BATCH( (short) 80, "executeBatch", RemoteTransactionHandle.class, RemoteStatementHandle.class, List.class ),
         FETCH( (short) 90, "fetch", RemoteStatementHandle.class, long.class, int.class ),
         CLOSE_STATEMENT( (short) 100, "closeStatement", RemoteStatementHandle.class ),
@@ -293,6 +322,11 @@ public interface RemoteMeta extends java.rmi.Remote {
         }
 
 
+        public static org.jgroups.blocks.MethodCall prepare( final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int[] columnIndexes ) {
+            return PREPARE2.call( remoteStatementHandle, sql, maxRowCount, columnIndexes );
+        }
+
+
         public static org.jgroups.blocks.MethodCall execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame ) {
             return EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame );
         }
@@ -300,6 +334,11 @@ public interface RemoteMeta extends java.rmi.Remote {
 
         public static org.jgroups.blocks.MethodCall prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) {
             return PREPARE_AND_EXECUTE.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
+        }
+
+
+        public static org.jgroups.blocks.MethodCall prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes ) {
+            return PREPARE_AND_EXECUTE2.call( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes );
         }
 
 

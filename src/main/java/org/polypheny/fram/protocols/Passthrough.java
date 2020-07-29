@@ -97,10 +97,26 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
+
+        return new QueryResultSet( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
         return new QueryResultSet( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, maxRowsInFirstFrame ) );
+    }
+
+
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+        String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
+
+        return new QueryResultSet( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
     }
 
 
@@ -129,10 +145,26 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
+    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
+
+        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, columnIndexes ) );
+    }
+
+
+    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
         return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount ) );
+    }
+
+
+    @Override
+    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+        String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
+
+        return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount, columnIndexes ) );
     }
 
 

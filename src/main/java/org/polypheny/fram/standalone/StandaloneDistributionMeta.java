@@ -36,6 +36,7 @@ import org.apache.calcite.avatica.MissingResultsException;
 import org.apache.calcite.avatica.NoSuchConnectionException;
 import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.QueryState;
+import org.apache.calcite.avatica.jdbc.JdbcMeta;
 import org.apache.calcite.avatica.proto.Common;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.avatica.remote.ProtobufMeta;
@@ -64,6 +65,7 @@ import org.slf4j.LoggerFactory;
  */
 class StandaloneDistributionMeta extends AbstractDistributionMeta implements Meta, ProtobufMeta {
 
+    public static final int UNLIMITED_ROW_COUNT = JdbcMeta.UNLIMITED_COUNT;
 
     public static final String ANONYMOUS_USERNAME = "anonymous";
     public static final String DATABASE_ADMIN_USERNAME = "pa";
@@ -431,8 +433,13 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
 
 
     @Override
-    public StatementHandle prepare( final ConnectionHandle connectionHandle, final String sql, final long maxRowCount ) {
+    public StatementHandle prepare( final ConnectionHandle connectionHandle, final String sql, long maxRowCount ) {
         LOGGER.trace( "prepare( connectionHandle: {}, sql: {}, maxRowCount: {} )", connectionHandle, sql, maxRowCount );
+
+        if ( maxRowCount >= 0L ) {
+            LOGGER.debug( "Ignoring MaxRows" );
+        }
+        maxRowCount = UNLIMITED_ROW_COUNT;
 
         final ConnectionInfos connection = getConnection( connectionHandle );
 
@@ -475,17 +482,17 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         }
         final SqlNode sqlTreeGenerated = sqlTreeValidated;
 
-        StatementInfos statement = connection.createStatement();
+        final StatementInfos statement;
         if ( sqlTreeValidated.isA( SqlKind.DML ) ) {
             /*
              * Branching off DML statements (writing statements)
              */
-            statement = prepareDataManipulation( connection, statement, sqlTreeGenerated, maxRowCount );
+            statement = prepareDataManipulation( connection, connection.createStatement(), sqlTreeGenerated, maxRowCount );
         } else if ( sqlTreeValidated.isA( SqlKind.QUERY ) ) {
             /*
              * Branching off QUERY statements (reading statements)
              */
-            statement = prepareDataQuery( connection, statement, sqlTreeGenerated, maxRowCount );
+            statement = prepareDataQuery( connection, connection.createStatement(), sqlTreeGenerated, maxRowCount );
         } else {
             /*
              * We should not be here. Can only be the case if the API of Apache Calcite Avatica has changed.
@@ -505,7 +512,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
+    protected StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
         LOGGER.trace( "prepareDataManipulation( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
 
         try {
@@ -524,7 +531,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
+    protected StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) {
         try {
             LOGGER.debug( "prepareDataQuery( connection: {}, sql: {}, maxRowCount: {} )", connection, sql, maxRowCount );
 
@@ -548,13 +555,29 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     @Override
     @Deprecated
     public ExecuteResult prepareAndExecute( StatementHandle h, String sql, long maxRowCount, PrepareCallback callback ) throws NoSuchStatementException {
+
+        if ( maxRowCount >= 0L ) {
+            LOGGER.debug( "Ignoring MaxRows" );
+        }
+        maxRowCount = UNLIMITED_ROW_COUNT;
+
         return prepareAndExecute( h, sql, maxRowCount, AvaticaUtils.toSaturatedInt( maxRowCount ), callback );
     }
 
 
     @Override
-    public ExecuteResult prepareAndExecute( final StatementHandle statementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws NoSuchStatementException {
+    public ExecuteResult prepareAndExecute( final StatementHandle statementHandle, final String sql, long maxRowCount, int maxRowsInFirstFrame, final PrepareCallback callback ) throws NoSuchStatementException {
         LOGGER.trace( "prepareAndExecute( statementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", statementHandle, sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+        if ( maxRowCount >= 0L ) {
+            LOGGER.debug( "Ignoring MaxRows" );
+        }
+        maxRowCount = UNLIMITED_ROW_COUNT;
+
+        if ( maxRowsInFirstFrame >= 0 ) {
+            LOGGER.debug( "Ignoring MaxRowsInFirstFrame" );
+        }
+        maxRowsInFirstFrame = UNLIMITED_ROW_COUNT;
 
         final ConnectionInfos connection = getConnection( statementHandle );
         final TransactionInfos transaction = connection.getOrStartTransaction();
@@ -619,7 +642,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         /*
          * Currently some TransactionControl commands are members of the DataDefinition group (See org.apache.calcite.sql.SqlKind, org.apache.calcite.sql.SqlKind.DDL).
          * We are especially interested in `COMMIT` and `ROLLBACK` statements.
@@ -663,7 +686,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         this.commit( connection, transaction );
@@ -675,7 +698,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         this.rollback( connection, transaction );
@@ -687,7 +710,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteSetOption( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteSetOption( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.trace( "prepareAndExecuteSetOption( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         String optionName = sql.accept( new SqlBasicVisitor<String>() {
@@ -746,7 +769,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.debug( "prepareAndExecuteDataManipulation(connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         try {
@@ -764,7 +787,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    private ExecuteResult prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.debug( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         try {
@@ -793,14 +816,25 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
      */
     @Override
     @Deprecated
-    public ExecuteResult execute( StatementHandle h, List<TypedValue> parameterValues, long maxRowCount ) throws NoSuchStatementException {
+    public ExecuteResult execute( final StatementHandle h, final List<TypedValue> parameterValues, long maxRowCount ) throws NoSuchStatementException {
+
+        if ( maxRowCount >= 0 ) {
+            LOGGER.debug( "Ignoring MaxRows" );
+        }
+        maxRowCount = UNLIMITED_ROW_COUNT;
+
         return execute( h, parameterValues, AvaticaUtils.toSaturatedInt( maxRowCount ) );
     }
 
 
     @Override
-    public ExecuteResult execute( final StatementHandle statementHandle, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException {
+    public ExecuteResult execute( final StatementHandle statementHandle, final List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException {
         LOGGER.trace( "execute( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
+
+        if ( maxRowsInFirstFrame >= 0 ) {
+            LOGGER.debug( "Ignoring MaxRowsInFirstFrame" );
+        }
+        maxRowsInFirstFrame = UNLIMITED_ROW_COUNT;
 
         final List<Common.TypedValue> serializedParameterValues = new LinkedList<>();
         for ( TypedValue value : parameterValues ) {
@@ -814,15 +848,16 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    public ExecuteResult executeProtobuf( final StatementHandle statementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException {
+    protected ExecuteResult executeProtobuf( final StatementHandle statementHandle, final List<Common.TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException {
         LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} )", statementHandle, parameterValues, maxRowsInFirstFrame );
+
         final ConnectionInfos connection = getConnection( statementHandle );
         final TransactionInfos transaction = connection.getOrStartTransaction();
         final StatementInfos statement = getStatement( statementHandle );
 
         try {
             final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
-                    () -> protocol.execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame )
+                    () -> protocol.execute( connection, transaction, statement, parameterValues, JdbcMeta.UNLIMITED_COUNT )
             );
 
             LOGGER.trace( "executeProtobuf( statementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", statementHandle, parameterValues, maxRowsInFirstFrame, resultSet );
@@ -884,6 +919,8 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     @Override
     public Frame fetch( final StatementHandle statementHandle, final long offset, final int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException {
         LOGGER.trace( "fetch( statementHandle: {}, offset: {}, fetchMaxRowCount: {} )", statementHandle, offset, fetchMaxRowCount );
+
+        LOGGER.warn( "fetch() is called! Use with caution since most protocols cannot handle fetch." );
 
         final ConnectionInfos connection = getConnection( statementHandle );
         final StatementInfos statement = getStatement( statementHandle );

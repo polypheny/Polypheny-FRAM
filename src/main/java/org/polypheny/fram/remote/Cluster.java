@@ -495,6 +495,37 @@ public class Cluster implements MembershipListener {
         return result;
     }
 
+
+    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes ) throws RemoteException {
+        return this.prepare( remoteStatementHandle, sql, maxRowCount, columnIndexes, ALL_NODES_IN_THE_CLUSTER );
+    }
+
+
+    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
+        return this.prepare( remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    }
+
+
+    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} )", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes );
+
+        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        final RspList<RemoteStatementHandle> result;
+
+        if ( remoteNodes != null && remoteNodes.size() == 1 &&
+                remoteNodes.iterator().next().cluster.equals( this ) &&
+                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
+
+            LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes );
+            result = new RspList<>( 1 );
+            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ) );
+        } else {
+            result = this.callMethods( Method.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ), remoteNodes );
+        }
+
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} ) = {}", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes, result );
+        return result;
+    }
     //
 
 
@@ -565,6 +596,42 @@ public class Cluster implements MembershipListener {
         }
 
         LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes, result );
+        return result;
+    }
+
+
+    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes ) throws RemoteException {
+        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, ALL_NODES_IN_THE_CLUSTER );
+    }
+
+
+    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
+        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    }
+
+
+    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes );
+
+        String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
+            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+            serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        }
+
+        final RspList<RemoteExecuteResult> result;
+
+        if ( remoteNodes != null && remoteNodes.size() == 1 &&
+                remoteNodes.iterator().next().cluster.equals( this ) &&
+                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
+            LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes );
+            result = new RspList<>( 1 );
+            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+        } else {
+            result = this.callMethods( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ), remoteNodes );
+        }
+
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes, result );
         return result;
     }
 

@@ -18,12 +18,15 @@ package org.polypheny.fram.standalone;
 
 
 import io.vavr.Function1;
+import io.vavr.Function4;
+import io.vavr.Function5;
 import java.sql.Connection;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -35,12 +38,16 @@ import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
+import org.apache.calcite.avatica.proto.Common.TypedValue;
+import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.tools.Planner;
 import org.polypheny.fram.Catalog;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
+import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -152,6 +159,13 @@ public class ConnectionInfos {
 
     public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction ) {
         return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction );
+    }
+
+
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
+            final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
+            final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction ) {
+        return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction, executeFunction, executeBatchFunction );
     }
 
 

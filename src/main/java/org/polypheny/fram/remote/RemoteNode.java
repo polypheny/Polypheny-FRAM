@@ -75,12 +75,34 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
 
 
     @Override
+    public RemoteStatementHandle prepare( final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int[] columnIndexes ) throws RemoteException {
+        LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {} )", this.address, remoteStatementHandle, sql, maxRowCount, columnIndexes );
+
+        final RemoteStatementHandle result = this.callRemoteMethod( Method.prepare( remoteStatementHandle, sql, maxRowCount, columnIndexes ) );
+
+        LOGGER.trace( "{}: prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {} ) = {}", this.address, remoteStatementHandle, sql, maxRowCount, columnIndexes, result );
+        return result;
+    }
+
+
+    @Override
     public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
         LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
 
         final RemoteExecuteResult result = this.callRemoteMethod( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame ) );
 
         LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes ) throws RemoteException {
+        LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {} )", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes );
+
+        final RemoteExecuteResult result = this.callRemoteMethod( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+
+        LOGGER.trace( "{}: prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {} ) = {}", this.address, remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, result );
         return result;
     }
 
