@@ -17,6 +17,8 @@
 package org.polypheny.fram.standalone;
 
 
+import static org.polypheny.fram.standalone.Utils.VOID;
+
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.sql.SQLException;
@@ -115,10 +117,10 @@ class LocalNode extends AbstractLocalNode {
 
     private ConnectionInfos getOrOpenConnection( final ConnectionHandle connectionHandle ) {
         synchronized ( remoteToLocalConnectionMap ) {
-            return remoteToLocalConnectionMap.computeIfAbsent( connectionHandle.id, cid -> {
+            return remoteToLocalConnectionMap.computeIfAbsent( connectionHandle.id, id -> {
                 // this is an unknown connection
                 // its first occurrence creates a new connection here to represent the original connection
-                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( cid ) );
+                final ConnectionInfos localConnection = new ConnectionInfos( new ConnectionHandle( id ) );
                 xaMeta.openConnection( localConnection.getConnectionHandle(), null );
                 return localConnection;
             } );
@@ -687,9 +689,6 @@ class LocalNode extends AbstractLocalNode {
         private SingletonHolder() {
         }
     }
-
-
-    private static final Void VOID = null;
 
 
     public static LocalNode getInstance() {

@@ -212,3 +212,5 @@ gradle-app.setting
 ###
 ###
 ### Overwrites
+# Include libraries which have to be shipped via this repo
+!lib/*

@@ -128,6 +128,11 @@ SqlDdlAlter SqlAlterTable(Span s) :
                      alterTable = SqlDdlAlterNodes.AlterTable.addConstraintUnique(s.end(this), id, constraintName, columnList);
                  }
             )
+        |
+            <INDEX> constraintName = SimpleIdentifier() <ON> columnList = ParenthesizedSimpleIdentifierList()
+            {
+                alterTable = SqlDdlAlterNodes.AlterTable.addIndex(s.end(this), id, constraintName, columnList);
+            }
         )
     |
         <ALTER> <COLUMN>

@@ -131,8 +131,9 @@ repositories {
 
 
 def calciteVersion = '1.22.0' /* KEEP THIS VERSION */
-def avaticaVersion = '1.16.1-POLYPHENY-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
+def avaticaVersion = '1.17.1-POLYPHENY-SNAPSHOT' /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 def log4jVersion = '2.12.1'
+def micrometerVersion = '1.5.1'
 
 
 dependencies {
@@ -176,10 +177,10 @@ dependencies {
     // Cluster Management, JGroups (Apache 2.0)
     implementation group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
     // Metrics, Micrometer Application Metrics (Apache 2.0)
-    implementation group: 'io.micrometer', name: 'micrometer-core', version: '1.5.1'
-    implementation group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.5.1'
-    implementation group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.5.1'
-    implementation group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.5.1'
+    implementation group: 'io.micrometer', name: 'micrometer-core', version: micrometerVersion
+    implementation group: 'io.micrometer', name: 'micrometer-registry-influx', version: micrometerVersion
+    implementation group: 'io.micrometer', name: 'micrometer-registry-jmx', version: micrometerVersion
+    implementation group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: micrometerVersion
     // Typesafe Config - Configuration library for JVM languages (Apache 2.0)
     implementation group: 'com.typesafe', name: 'config', version: '1.4.0'
     // Vavr - object-functional library (Apache 2.0)

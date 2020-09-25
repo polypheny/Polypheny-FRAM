@@ -76,6 +76,9 @@ public class SqlDdlAlterNodes {
             return new SqlAlterTable.SqlAlterTableAddUnique( pos, tableName, constraintName, columnList );
         }
 
+        public static SqlAlterTable addIndex(SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier indexName, SqlNodeList columnList) {
+            return new SqlAlterTable.SqlAlterTableAddIndex(pos, tableName, indexName, columnList);
+        }
 
         public static SqlAlterTable alterColumnDefinition( SqlParserPos pos, SqlIdentifier tableName, SqlNode columnDefinition ) {
             return new SqlAlterTable.SqlAlterTableAlterColumnDefinition( pos, tableName, columnDefinition );

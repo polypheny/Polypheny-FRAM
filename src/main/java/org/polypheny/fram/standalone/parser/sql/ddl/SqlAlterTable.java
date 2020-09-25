@@ -246,6 +246,48 @@ public abstract class SqlAlterTable extends SqlDdlAlter {
 
 
     /**
+     * {@code ALTER TABLE <tablename> ADD <indexname> ON (<column list>);}
+     */
+    public static class SqlAlterTableAddIndex extends SqlAlterTable {
+
+        private final SqlIdentifier indexName;
+        private final SqlNodeList columns;
+
+        public SqlAlterTableAddIndex( SqlParserPos pos, SqlIdentifier tableName, SqlIdentifier indexName, SqlNodeList columns ) {
+            super( pos, tableName );
+            this.indexName = Objects.requireNonNull( indexName );
+            this.columns = Objects.requireNonNull( columns );
+        }
+
+
+        @Override
+        public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
+            super.unparse( writer, leftPrec, rightPrec );
+
+            writer.keyword( "ADD" );
+            writer.keyword( "INDEX" );
+            indexName.unparse( writer, leftPrec, rightPrec );
+            writer.keyword( "ON" );
+            {//NOSONAR "squid:S1199" - Justification: better readability
+                final SqlWriter.Frame list = writer.startList( FrameTypeEnum.PARENTHESES, "(", ")" );
+                columns.unparse( writer, leftPrec, rightPrec );
+                writer.endList( list );
+            }
+        }
+
+
+        @Nonnull
+        @Override
+        public List<SqlNode> getOperandList() {
+            return ImmutableNullableList.<SqlNode>builder().addAll( super.getOperandList() )
+                    .add( indexName )
+                    .add( columns )
+                    .build();
+        }
+    }
+
+
+    /**
      * {@code ALTER TABLE <tablename> ADD [CONSTRAINT <constraintname>]
      * PRIMARY KEY (<column list>);}
      */

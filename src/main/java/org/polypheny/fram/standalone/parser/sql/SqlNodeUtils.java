@@ -22,6 +22,9 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
@@ -36,6 +39,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlUpdate;
+import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlVisitor;
 
 
@@ -397,8 +401,8 @@ public abstract class SqlNodeUtils {
         }
 
 
-        public Map<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlSelect select, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
-            final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+        public SortedMap<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlSelect select, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
+            final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
 
             final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( select );
             // Check if the primary key is included in the WHERE condition
@@ -475,8 +479,13 @@ public abstract class SqlNodeUtils {
         }
 
 
-        public Map<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlInsert insert, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
-            final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+        public SqlNodeList getTargetColumns( final SqlInsert insert ) {
+            return insert.getTargetColumnList();
+        }
+
+
+        public SortedMap<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlInsert insert, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
+            final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
             final SqlNodeList targetColumns = insert.getTargetColumnList();
 
             if ( targetColumns == null || targetColumns.size() == 0 ) {
@@ -641,13 +650,36 @@ public abstract class SqlNodeUtils {
         }
 
 
+        public SqlNodeList getTargetColumns( final SqlUpdate update ) {
+            return update.getTargetColumnList();
+        }
+
+        public boolean targetColumnsContainPrimaryKeyColumn(final SqlUpdate update, final Set<String> primaryKeyColumnsNames ) {
+            return this.getTargetColumns( update ).accept( new SqlBasicVisitor<Boolean>() {
+                @Override
+                public Boolean visit( SqlNodeList nodeList ) {
+                    boolean b = false;
+                    for ( SqlNode node : nodeList ) {
+                        b |= node.accept( this );
+                    }
+                    return b;
+                }
+
+
+                @Override
+                public Boolean visit( SqlIdentifier id ) {
+                    return primaryKeyColumnsNames.contains( id.names.reverse().get( 0 ) );
+                }
+            } );
+        }
+
         public boolean whereConditionContainsOnlyEquals( final SqlUpdate update ) {
             return super.whereConditionContainsOnlyEquals( update.getCondition() );
         }
 
 
-        public Map<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlUpdate update, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
-            final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+        public SortedMap<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlUpdate update, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
+            final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
 
             final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( update );
             // Check if the primary key is included in the WHERE condition

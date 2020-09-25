@@ -20,6 +20,7 @@ package org.polypheny.fram.protocols.replication;
 import io.vavr.Function1;
 import java.io.Serializable;
 import java.rmi.RemoteException;
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,6 +30,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.Frame;
@@ -59,6 +61,7 @@ import org.jgroups.util.RspList;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.ReplicationProtocol;
 import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.ClusterUtils;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
@@ -70,6 +73,7 @@ import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.polypheny.fram.standalone.Utils;
+import org.polypheny.fram.standalone.Utils.WrappingException;
 import org.polypheny.fram.standalone.parser.sql.ddl.SqlAlterTable;
 import org.polypheny.fram.standalone.parser.sql.ddl.SqlCreateIndex;
 
@@ -132,6 +136,9 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     public final boolean WORK_IN_PROGRESS = true;
 
+    private final Map<TransactionInfos, Collection<AbstractRemoteNode>> transactionToReadQuorum = new ConcurrentHashMap<>();
+    private final Map<TransactionInfos, Collection<AbstractRemoteNode>> transactionToWriteQuorum = new ConcurrentHashMap<>();
+
 
     public QuorumReplication( final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> readQuorumFunction, final Function1<ConnectionInfos, Collection<AbstractRemoteNode>> writeQuorumFunction ) {
         this.readQuorumFunction = readQuorumFunction;
@@ -143,7 +150,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
      * For 1SR consistency, it is required that the read and the write quorum have at least one node in common.
      */
     protected Collection<AbstractRemoteNode> getReadQuorum( final ConnectionInfos connection ) {
-        return this.readQuorumFunction.apply( connection );
+        return this.transactionToReadQuorum.computeIfAbsent( connection.getTransaction(), __ -> this.readQuorumFunction.apply( connection ) );
     }
 
 
@@ -151,7 +158,7 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
      * For 1SR consistency, it is required that the read and the write quorum have at least one node in common.
      */
     protected Collection<AbstractRemoteNode> getWriteQuorum( final ConnectionInfos connection ) {
-        return this.writeQuorumFunction.apply( connection );
+        return this.transactionToWriteQuorum.computeIfAbsent( connection.getTransaction(), __ -> this.writeQuorumFunction.apply( connection ) );
     }
 
 
@@ -328,30 +335,26 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection );
         LOGGER.trace( "prepareAndExecute[DataManipulation] on {}", quorum );
 
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, quorum );
+        // EXECUTE the statement
+        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame,
+                quorum
+        );
+        // handle the responses
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-            }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+        for ( AbstractRemoteNode _node : remoteResults.keySet() ) {
+            connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
+        }
 
-            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
-
-            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-            } );
-        } );
-
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
-            }
-        } );
+        return statement.createResultSet( remoteResults,
+                /* mergeResults */ ( origins ) -> origins.entrySet().iterator().next().getValue().toExecuteResult(),
+                /* fetch */ ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
+                    try {
+                        return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
+                    } catch ( RemoteException e ) {
+                        throw Utils.wrapException( e );
+                    }
+                } );
     }
 
 
@@ -366,30 +369,26 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection );
         LOGGER.trace( "prepareAndExecute[DataQuery] on {}", quorum );
 
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame, quorum );
+        // EXECUTE the statement
+        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame,
+                quorum
+        );
+        // handle the responses
+        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-            }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+        for ( AbstractRemoteNode _node : remoteResults.keySet() ) {
+            connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
+        }
 
-            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
-
-            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-            } );
-        } );
-
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
-            }
-        } );
+        return statement.createResultSet( remoteResults,
+                /* mergeResults */ ( _origins ) -> _origins.entrySet().iterator().next().getValue().toExecuteResult(),
+                /* fetch */ ( _origins, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
+                    try {
+                        return _origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _offset, _fetchMaxRowCount ).toFrame();
+                    } catch ( RemoteException e ) {
+                        throw Utils.wrapException( e );
+                    }
+                } );
     }
 
 
@@ -405,10 +404,15 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
         switch ( sql.getKind() ) {
             // See org.apache.calcite.sql.SqlKind.DML
             case INSERT:
-                return prepareDataManipulationInsert( connection, statement, (SqlInsert) sql, maxRowCount );
+                if ( WORK_IN_PROGRESS ) {
+                    break;
+                } else {
+                    return prepareDataManipulationInsert( connection, statement, (SqlInsert) sql, maxRowCount );
+                }
 
             case DELETE:
             case UPDATE:
+                // intentional empty case
                 break;
 
             case MERGE:
@@ -417,28 +421,75 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
                 throw new UnsupportedOperationException( "Not supported" );
         }
 
-        final Collection<AbstractRemoteNode> quorum = this.getWriteQuorum( connection );
-        LOGGER.trace( "prepare[DataManipulation] on {}", quorum );
+        // PREPARE on ALL nodes
+        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+        // handle the responses of the PREPARE execution
+        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
 
-        final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
-        final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
+        return connection.createPreparedStatement( statement, prepareRemoteResults,
+                //
+                /* signatureMerge */ ( _remoteStatements ) -> {
+                    // BEGIN HACK
+                    return _remoteStatements.values().iterator().next().toStatementHandle().signature;
+                    // END HACK
+                },
+                //
+                /* execute */ ( _connection, _transaction, _statement, _parameterValues, _maxRowsInFirstFrame ) -> {
+                    //
+                    final Collection<AbstractRemoteNode> _writeQuorum = this.getWriteQuorum( _connection );
+                    LOGGER.trace( "execute on {}", _writeQuorum );
 
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-            }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+                    final Map<AbstractRemoteNode, RemoteExecuteResult> _executeRemoteResults;
+                    try {
+                        // EXECUTE the statements
+                        final RspList<RemoteExecuteResult> _executeResponseList = _connection.getCluster().execute( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _parameterValues, _maxRowsInFirstFrame,
+                                _writeQuorum
+                        );
+                        // handle the EXECUTE responses
+                        _executeRemoteResults = ClusterUtils.getRemoteResults( _connection.getCluster(), _executeResponseList );
+                    } catch ( RemoteException ex ) {
+                        throw Utils.wrapException( ex );
+                    }
 
-            preparedStatements.put( currentRemote, remoteStatementHandleRsp.getValue() );
+                    for ( AbstractRemoteNode _node : _executeRemoteResults.keySet() ) {
+                        _connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( _connection.getConnectionHandle() ) );
+                    }
 
-            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
-        } );
+                    return _statement.createResultSet( _executeRemoteResults,
+                            /* mergeResults */ ( __origins ) -> __origins.entrySet().iterator().next().getValue().toExecuteResult(),
+                            /* fetch */ ( __origins, __connection, __statement, __offset, __fetchMaxRowCount ) -> {
+                                try {
+                                    return __origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( __statement.getStatementHandle() ), __offset, __fetchMaxRowCount ).toFrame();
+                                } catch ( RemoteException e ) {
+                                    throw Utils.wrapException( e );
+                                }
+                            } );
+                },
+                //
+                /* executeBatch */ ( _connection, _transaction, _statement, _listOfUpdateBatches ) -> {
+                    //
+                    final Collection<AbstractRemoteNode> _writeQuorum = this.getWriteQuorum( _connection );
+                    LOGGER.trace( "executeBatch on {}", _writeQuorum );
 
-        return connection.createPreparedStatement( statement, preparedStatements, remoteStatements -> {
-            // BEGIN HACK
-            return remoteStatements.values().iterator().next().toStatementHandle().signature;
-            // END HACK
-        } );
+                    final Map<AbstractRemoteNode, RemoteExecuteBatchResult> _executeRemoteBatchResults;
+                    try {
+                        // EXECUTE the statements
+                        final RspList<RemoteExecuteBatchResult> _executeBatchResponseList = _connection.getCluster().executeBatch( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _listOfUpdateBatches,
+                                _writeQuorum
+                        );
+                        // handle the EXECUTE responses
+                        _executeRemoteBatchResults = ClusterUtils.getRemoteResults( _connection.getCluster(), _executeBatchResponseList );
+                    } catch ( RemoteException ex ) {
+                        throw Utils.wrapException( ex );
+                    }
+
+                    for ( AbstractRemoteNode _node : _executeRemoteBatchResults.keySet() ) {
+                        _connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( _connection.getConnectionHandle() ) );
+                    }
+
+                    return _statement.createBatchResultSet( _executeRemoteBatchResults,
+                            /* mergeResults */ ( __origins ) -> __origins.entrySet().iterator().next().getValue().toExecuteBatchResult() );
+                } );
     }
 
 
@@ -525,28 +576,56 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
 
     @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        final Collection<AbstractRemoteNode> quorum = this.getReadQuorum( connection );
-        LOGGER.trace( "prepare[DataQuery] on {}", quorum );
 
-        final RspList<RemoteStatementHandle> responseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, quorum );
-        final Map<AbstractRemoteNode, RemoteStatementHandle> preparedStatements = new HashMap<>();
+        // PREPARE on ALL nodes
+        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+        // handle the responses of the PREPARE execution
+        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
 
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-            }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+        return connection.createPreparedStatement( statement, prepareRemoteResults,
+                //
+                /* signatureMerge */ ( _remoteStatements ) -> {
+                    // BEGIN HACK
+                    return _remoteStatements.values().iterator().next().toStatementHandle().signature;
+                    // END HACK
+                },
+                //
+                /* execute */ ( _connection, _transaction, _statement, _parameterValues, _maxRowsInFirstFrame ) -> {
+                    //
+                    final Collection<AbstractRemoteNode> _readQuorum = this.getReadQuorum( _connection );
+                    LOGGER.trace( "execute on {}", _readQuorum );
 
-            preparedStatements.put( currentRemote, remoteStatementHandleRsp.getValue() );
+                    final Map<AbstractRemoteNode, RemoteExecuteResult> _executeRemoteResults;
+                    try {
+                        // EXECUTE the statements
+                        final RspList<RemoteExecuteResult> _executeResponseList = _connection.getCluster().execute( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _parameterValues, _maxRowsInFirstFrame,
+                                _readQuorum
+                        );
+                        // handle the EXECUTE responses
+                        _executeRemoteResults = ClusterUtils.getRemoteResults( _connection.getCluster(), _executeResponseList );
+                    } catch ( RemoteException ex ) {
+                        throw Utils.wrapException( ex );
+                    }
 
-            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandleRsp.getValue().toStatementHandle().connectionId ) ) );
-        } );
+                    for ( AbstractRemoteNode _node : _executeRemoteResults.keySet() ) {
+                        _connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( _connection.getConnectionHandle() ) );
+                    }
 
-        return connection.createPreparedStatement( statement, preparedStatements, remoteStatements -> {
-            // BEGIN HACK
-            return remoteStatements.values().iterator().next().toStatementHandle().signature;
-            // END HACK
-        } );
+                    return _statement.createResultSet( _executeRemoteResults,
+                            /* mergeResults */ ( __origins ) -> __origins.entrySet().iterator().next().getValue().toExecuteResult(),
+                            /* fetch */ ( __origins, __connection, __statement, __offset, __fetchMaxRowCount ) -> {
+                                try {
+                                    return __origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( __statement.getStatementHandle() ), __offset, __fetchMaxRowCount ).toFrame();
+                                } catch ( RemoteException e ) {
+                                    throw Utils.wrapException( e );
+                                }
+                            } );
+                },
+                //
+                /* executeBatch */ ( _connection, _transaction, _statement, _listOfUpdateBatches ) -> {
+                    //
+                    throw Utils.wrapException( new SQLException( "SELECT statements cannot be executed in a batch context." ) );
+                } );
     }
 
 
@@ -562,62 +641,73 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
 
-        // Execute the statement on the nodes it was prepared
-        final Collection<AbstractRemoteNode> quorum = ((PreparedStatementInfos) statement).getExecutionTargets();
-        LOGGER.trace( "execute on {}", quorum );
-
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().execute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, maxRowsInFirstFrame, quorum );
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
-
-        responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-            if ( remoteStatementHandleRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
+        try {
+            return ((PreparedStatementInfos) statement).execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof NoSuchStatementException ) {
+                throw (NoSuchStatementException) t;
             }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
-
-            remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
-
-            remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-            } );
-        } );
-
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
             }
-        } );
+            throw we;
+        }
     }
 
 
     @Override
-    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
+    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> listOfParameterValues ) throws NoSuchStatementException, RemoteException {
         if ( !(statement instanceof PreparedStatementInfos) ) {
             throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
         }
 
-        // Execute the statement on the nodes it was prepared
-        final Collection<AbstractRemoteNode> quorum = ((PreparedStatementInfos) statement).getExecutionTargets();
-        LOGGER.trace( "executeBatch on {}", quorum );
+        // only DML
 
-        final RspList<RemoteExecuteBatchResult> responseList = connection.getCluster().executeBatch( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), parameterValues, quorum );
-        final Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteResults = new HashMap<>();
-
-        responseList.forEach( ( address, remoteExecuteBatchResultRsp ) -> {
-            if ( remoteExecuteBatchResultRsp.hasException() ) {
-                throw new RuntimeException( "Exception at " + address + " occurred.", remoteExecuteBatchResultRsp.getException() );
+        try {
+            return ((PreparedStatementInfos) statement).executeBatch( connection, transaction, statement, listOfParameterValues );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof NoSuchStatementException ) {
+                throw (NoSuchStatementException) t;
             }
-            final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
+    }
 
-            remoteResults.put( currentRemote, remoteExecuteBatchResultRsp.getValue() );
 
-            connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
-        } );
+    @Override
+    public ResultSetInfos prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException {
+        this.transactionToReadQuorum.remove( transaction );
+        this.transactionToWriteQuorum.remove( transaction );
+        return super.prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    }
 
-        return statement.createBatchResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteBatchResult() );
+
+    @Override
+    public ResultSetInfos prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException {
+        this.transactionToReadQuorum.remove( transaction );
+        this.transactionToWriteQuorum.remove( transaction );
+        return super.prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+    }
+
+
+    @Override
+    public void commit( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException {
+        this.transactionToReadQuorum.remove( transaction );
+        this.transactionToWriteQuorum.remove( transaction );
+        super.commit( connection, transaction );
+    }
+
+
+    @Override
+    public void rollback( final ConnectionInfos connection, final TransactionInfos transaction ) throws RemoteException {
+        this.transactionToReadQuorum.remove( transaction );
+        this.transactionToWriteQuorum.remove( transaction );
+        super.rollback( connection, transaction );
     }
 
 
@@ -663,31 +753,24 @@ public class QuorumReplication extends AbstractProtocol implements ReplicationPr
             final Collection<AbstractRemoteNode> quorum = this.getAllNodes( connection.getCluster() );
             LOGGER.trace( "prepareAndExecute[DataDefinition] on {}", quorum );
 
+            // execute on ALL nodes
             final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame, quorum );
+            // handle the responses of the execution
+            final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
 
-            final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
+            for ( AbstractRemoteNode _node : remoteResults.keySet() ) {
+                connection.addAccessedNode( _node, RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ) );
+            }
 
-            responseList.forEach( ( address, remoteStatementHandleRsp ) -> {
-                if ( remoteStatementHandleRsp.hasException() ) {
-                    throw new RuntimeException( "Exception at " + address + " occurred.", remoteStatementHandleRsp.getException() );
-                }
-                final AbstractRemoteNode currentRemote = connection.getCluster().getRemoteNode( address );
-
-                remoteResults.put( currentRemote, remoteStatementHandleRsp.getValue() );
-
-                remoteStatementHandleRsp.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                    connection.addAccessedNode( currentRemote, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                    statement.addAccessedNode( currentRemote, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-                } );
-            } );
-
-            return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-                try {
-                    return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-                } catch ( RemoteException e ) {
-                    throw Utils.wrapException( e );
-                }
-            } );
+            return statement.createResultSet( remoteResults,
+                    /* mergeResults */ ( _origins ) -> _origins.entrySet().iterator().next().getValue().toExecuteResult(),
+                    /* fetch */ ( _origins, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
+                        try {
+                            return _origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _offset, _fetchMaxRowCount ).toFrame();
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
+                    } );
         }
     }
 }

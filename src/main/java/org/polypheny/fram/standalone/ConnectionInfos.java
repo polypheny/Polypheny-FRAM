@@ -152,17 +152,25 @@ public class ConnectionInfos {
     }
 
 
+    /**
+     * This PreparedStatementInfos represents a only locally present prepared statement. Do not use this for distributed setups.
+     */
     public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
         return statement.new PreparedStatementInfos( remoteNode, remoteStatement );
     }
 
 
+    /**
+     * @deprecated Use the other one
+     */
+    @Deprecated
     public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction ) {
         return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction );
     }
 
 
-    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
+    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements,
+            final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
             final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
             final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction ) {
         return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction, executeFunction, executeBatchFunction );

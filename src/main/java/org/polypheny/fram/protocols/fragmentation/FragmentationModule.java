@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
@@ -191,8 +193,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         // send to all
         // todo: replace this with a call to the protocol down
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
-
-        // handle the responses of the PREPARE execution
+        // handle the responses of the execution
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
 
         switch ( aggregateNode.getKind() ) {
@@ -278,21 +279,21 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
     protected StatementInfos prepareDataManipulationInsert( ConnectionInfos connection, StatementInfos statement, SqlInsert sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataManipulationInsert( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
+        // inserts have to be PREPARED on ALL nodes
+        // todo: replace this with a call to the protocol down
+        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+        // handle the responses of the PREPARE execution
+        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
+
         final SqlIdentifier targetTable = SqlNodeUtils.INSERT_UTILS.getTargetTable( sql );
+        final SqlNodeList targetColumns = SqlNodeUtils.INSERT_UTILS.getTargetColumns( sql );
 
         final String catalogName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 );
         final String schemaName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 1 );
         final String tableName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 0 );
         final Map<String, Integer> primaryKeyColumnNamesAndIndexes = CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName );
 
-        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = SqlNodeUtils.INSERT_UTILS.getPrimaryKeyColumnsIndexesToParametersIndexesMap( sql, primaryKeyColumnNamesAndIndexes );
-
-        // inserts have to be PREPARED on ALL nodes
-        // todo: replace this with a call to the protocol down
-        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
-
-        // handle the responses of the PREPARE execution
-        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
+        final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = SqlNodeUtils.INSERT_UTILS.getPrimaryKeyColumnsIndexesToParametersIndexesMap( sql, primaryKeyColumnNamesAndIndexes );
 
         // construct the prepared statement together with the execution functions
         return connection.createPreparedStatement( statement, prepareRemoteResults,
@@ -403,23 +404,22 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
             throw new UnsupportedOperationException( "Not supported yet." );
         }
 
-        final SqlIdentifier targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( sql );
-
         // deletes have to be PREPARED on ALL nodes
         // todo: replace this with a call to the protocol down
         final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
-
         // handle the responses of the PREPARE execution
         final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
+
+        final SqlIdentifier targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( sql );
 
         // do now most of the work required for later execution
         final String catalogName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 );
         final String schemaName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 1 );
         final String tableName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 0 );
         final Map<String, Integer> primaryKeyColumnNamesAndIndexes = CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName );
-        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnNamesAndIndexes.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
-        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
 
+        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnNamesAndIndexes.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
+        final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
         final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
 
         // Check the WHERE condition if the primary key is included
@@ -486,7 +486,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
                     return _statement.createResultSet( _remoteResults,
                             /* mergeResults */ ( origins ) -> {
                                 //
-                                if ( final_allPrimaryKeyColumnsAreInTheCondition ) {
+/*                                if ( final_allPrimaryKeyColumnsAreInTheCondition ) {
                                     // the full primary key is present in the where condition of the query
                                     // we can use this to add to the workload
 
@@ -504,7 +504,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
                                 } else {
                                     // we need to scan the result set to measure the workload
                                     throw new UnsupportedOperationException( "Not implemented yet." );
-                                }
+                                }*/
 
                                 // todo: replace with a proper merge of the results
                                 return new HorizontalExecuteResultMergeFunction().apply( _statement, origins, _maxRowsInFirstFrame );
@@ -531,7 +531,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         }
 
         final SqlIdentifier targetTable = SqlNodeUtils.UPDATE_UTILS.getTargetTable( sql );
-        final SqlNodeList targetColumns = sql.getTargetColumnList();
+        final SqlNodeList targetColumns = SqlNodeUtils.UPDATE_UTILS.getTargetColumns( sql );
 
         // do now most of the work required for later execution
         final String catalogName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 );
@@ -566,7 +566,6 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         // updates have to be PREPARED on ALL nodes
         // todo: replace this with a call to the protocol down
         final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
-
         // handle the responses of the PREPARE execution
         final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
 
@@ -717,13 +716,6 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         // more than one table and especially the required join is currently not supported!
         final SqlIdentifier targetTable = SqlNodeUtils.SELECT_UTILS.getTargetTable( sql );
 
-        // selects might have to be PREPARED on ALL nodes (so we do it now)
-        // todo: replace this with a call to the protocol down
-        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
-
-        // handle the responses of the PREPARE execution
-        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
-
         // do now most of the work required for later execution
         final String catalogName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 );
         final String schemaName = SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 1 );
@@ -746,7 +738,14 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
                 incompletePrimaryKey = true;
             }
         }
+
         final boolean final_incompletePrimaryKey = incompletePrimaryKey;
+
+        // selects might have to be PREPARED on ALL nodes
+        // todo: replace this with a call to the protocol down
+        final RspList<RemoteStatementHandle> prepareResponseList = connection.getCluster().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount );
+        // handle the responses of the PREPARE execution
+        final Map<AbstractRemoteNode, RemoteStatementHandle> prepareRemoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), prepareResponseList );
 
         // construct the prepared statement together with the execution functions
         return connection.createPreparedStatement( statement, prepareRemoteResults,
@@ -862,14 +861,6 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         // more than one table and especially the required join is currently not supported!
         final SqlIdentifier targetTable = SqlNodeUtils.SELECT_UTILS.getTargetTable( sql );
 
-        final SqlNode asExpressionOrAggregateNode = selectList.get( 0 );
-        final SqlNode aggregateNode;
-        if ( asExpressionOrAggregateNode.getKind() == SqlKind.AS ) {
-            aggregateNode = ((SqlBasicCall) asExpressionOrAggregateNode).operand( 0 );
-        } else {
-            aggregateNode = asExpressionOrAggregateNode;
-        }
-
         final Map<String, Integer> primaryKeyColumnNamesAndIndexes = CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 ), SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 1 ), SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 0 ) );
         final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnNamesAndIndexes.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
         final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
@@ -909,6 +900,14 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
         } else {
             // We need to scan and thus the query needs to go to all nodes
             executionTargetsFunction = ( clusterMembers, typedValues ) -> clusterMembers;
+        }
+
+        final SqlNode asExpressionOrAggregateNode = selectList.get( 0 );
+        final SqlNode aggregateNode;
+        if ( asExpressionOrAggregateNode.getKind() == SqlKind.AS ) {
+            aggregateNode = ((SqlBasicCall) asExpressionOrAggregateNode).operand( 0 );
+        } else {
+            aggregateNode = asExpressionOrAggregateNode;
         }
 
         final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction;

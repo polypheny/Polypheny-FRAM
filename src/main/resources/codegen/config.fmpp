@@ -55,6 +55,7 @@ data: {
         "org.polypheny.fram.standalone.parser.sql.ctrl.SqlCtrlNodes"
         "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlAlterNodes"
         "org.polypheny.fram.standalone.parser.sql.ddl.SqlDdlIndexNodes"
+        "org.polypheny.fram.standalone.parser.sql.op.SqlUnnestCall"
 # ### MODIFICATION END
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
@@ -404,7 +405,7 @@ data: {
       "FILE"
       "ARCHIVE"
 # ### MODIFICATION START
-      "INDEX"
+#      "INDEX"
       "RENAME"
 # ### MODIFICATION END
     ]
@@ -443,6 +444,9 @@ data: {
     # Return type of method implementation should be "SqlNode".
     # Example: DateFunctionCall().
     builtinFunctionCallMethods: [
+# ### MODIFICATION START
+        "SqlUnnestCall()"
+# ### MODIFICATION END
     ]
 
     # List of methods for parsing extensions to "ALTER <scope>" calls.
@@ -497,6 +501,7 @@ data: {
         "sqlDataDefinition.ftl"
         "sqlDdlAlter.ftl"
         "sqlTransactionControl.ftl"
+        "sqlUnnestCall.ftl"
 # ### MODIFICATION END
     ]
 
