@@ -17,23 +17,17 @@
 package org.polypheny.fram.protocols.migration;
 
 
-import java.io.Serializable;
 import java.rmi.RemoteException;
-import java.util.List;
-import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.Frame;
+import java.util.Collection;
+import java.util.Map;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
-import org.apache.calcite.avatica.Meta.Signature;
-import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.avatica.MissingResultsException;
-import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.QueryState;
-import org.apache.calcite.avatica.proto.Common.TypedValue;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.protocols.AbstractProtocol;
-import org.polypheny.fram.protocols.Protocol;
 import org.polypheny.fram.protocols.Protocol.MigrationProtocol;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
@@ -41,28 +35,6 @@ import org.polypheny.fram.standalone.TransactionInfos;
 
 
 public class MigrationModule extends AbstractProtocol implements MigrationProtocol {
-
-    protected Protocol down;
-
-
-    @Override
-    public Protocol setUp( Protocol protocol ) {
-        return null;
-    }
-
-
-    @Override
-    public Protocol setDown( Protocol protocol ) {
-        this.down = protocol;
-        return this;
-    }
-
-
-    @Override
-    public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
-        return null;
-    }
-
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
@@ -77,7 +49,7 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -89,7 +61,7 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -113,7 +85,7 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -125,62 +97,8 @@ public class MigrationModule extends AbstractProtocol implements MigrationProtoc
 
 
     @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
         return null;
-    }
-
-
-    @Override
-    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public Frame fetch( ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public void closeConnection( ConnectionInfos connection ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        return false;
     }
 
 

@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram.remote;
+package org.polypheny.fram.remote.types;
 
 
-import lombok.EqualsAndHashCode;
-import org.jgroups.Address;
+import java.io.Serializable;
 
 
-@EqualsAndHashCode(onlyExplicitlyIncluded = true)
-public abstract class AbstractNode implements RemoteMeta {
+public interface RemoteResult extends Serializable {
 
-    public AbstractNode() {
-        super();
-    }
-
-
-    @EqualsAndHashCode.Include
-    public abstract Address getNodeAddress();
 }

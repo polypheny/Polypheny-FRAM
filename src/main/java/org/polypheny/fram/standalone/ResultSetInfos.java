@@ -20,17 +20,17 @@ package org.polypheny.fram.standalone;
 import io.vavr.Function1;
 import io.vavr.Function5;
 import java.rmi.RemoteException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
-import org.polypheny.fram.remote.AbstractRemoteNode;
-import org.polypheny.fram.remote.RemoteMeta;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteResult;
 import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
@@ -44,7 +44,7 @@ public abstract class ResultSetInfos {
     }
 
 
-    public abstract <ExecuteResultType> Map<RemoteMeta, ExecuteResultType> getOrigins();
+    public abstract <NodeType extends Node, RemoteResultType extends RemoteResult> Map<NodeType, RemoteResultType> getOrigins();
 
 
     public abstract <ExecuteResultType> ExecuteResultType getExecuteResult();
@@ -55,35 +55,33 @@ public abstract class ResultSetInfos {
     }
 
 
-    public static class QueryResultSet extends ResultSetInfos {
+    public static class QueryResultSet<NodeType extends Node> extends ResultSetInfos {
 
-        private final Map<AbstractRemoteNode, RemoteExecuteResult> origins;
+        private final Map<NodeType, RemoteExecuteResult> origins;
         private final ExecuteResult executeResult;
-        private final Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
+        private final Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
 
 
-        public QueryResultSet( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteResult remoteResult ) {
+        public QueryResultSet( StatementInfos statement, NodeType origin, RemoteExecuteResult remoteResult ) {
             super( statement );
 
-            final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+            final Map<NodeType, RemoteExecuteResult> origins = new LinkedHashMap<>();
             origins.put( origin, remoteResult );
             this.origins = Collections.unmodifiableMap( origins );
 
             this.executeResult = remoteResult.toExecuteResult();
-            this.resultsFetchFunction = ( _origins, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
-                try {
-                    return origin.fetch( RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _offset, _fetchMaxRowCount ).toFrame();
-                } catch ( RemoteException e ) {
-                    throw Utils.wrapException( e );
-                }
+            this.resultsFetchFunction = ( _resultMap, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
+                throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
             };
         }
 
 
-        public QueryResultSet( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
+        public QueryResultSet( StatementInfos statement, Map<NodeType, RemoteExecuteResult> remoteResults,
+                Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction,
+                Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
             super( statement );
 
-            final Map<AbstractRemoteNode, RemoteExecuteResult> origins = new LinkedHashMap<>();
+            final Map<NodeType, RemoteExecuteResult> origins = new LinkedHashMap<>();
             origins.putAll( remoteResults );
             this.origins = Collections.unmodifiableMap( origins );
 
@@ -93,7 +91,7 @@ public abstract class ResultSetInfos {
 
 
         @Override
-        public Map<AbstractRemoteNode, RemoteExecuteResult> getOrigins() {
+        public Map<NodeType, RemoteExecuteResult> getOrigins() {
             return this.origins;
         }
 
@@ -119,16 +117,16 @@ public abstract class ResultSetInfos {
     }
 
 
-    public static class BatchResultSetInfos extends ResultSetInfos {
+    public static class BatchResultSetInfos<NodeType extends Node> extends ResultSetInfos {
 
-        private final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins;
+        private final Map<NodeType, RemoteExecuteBatchResult> origins;
         private final ExecuteBatchResult executeBatchResult;
 
 
-        public BatchResultSetInfos( StatementInfos statement, AbstractRemoteNode origin, RemoteExecuteBatchResult remoteBatchResult ) {
+        public BatchResultSetInfos( StatementInfos statement, NodeType origin, RemoteExecuteBatchResult remoteBatchResult ) {
             super( statement );
 
-            final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+            final Map<NodeType, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
             origins.put( origin, remoteBatchResult );
             this.origins = Collections.unmodifiableMap( origins );
 
@@ -136,10 +134,10 @@ public abstract class ResultSetInfos {
         }
 
 
-        public BatchResultSetInfos( StatementInfos statement, Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> batchResultsMergeFunction ) {
+        public BatchResultSetInfos( StatementInfos statement, Map<NodeType, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<NodeType, RemoteExecuteBatchResult>, ExecuteBatchResult> batchResultsMergeFunction ) {
             super( statement );
 
-            final Map<AbstractRemoteNode, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
+            final Map<NodeType, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
             origins.putAll( remoteBatchResults );
             this.origins = Collections.unmodifiableMap( origins );
 
@@ -148,7 +146,7 @@ public abstract class ResultSetInfos {
 
 
         @Override
-        public Map<AbstractRemoteNode, RemoteExecuteBatchResult> getOrigins() {
+        public Map<NodeType, RemoteExecuteBatchResult> getOrigins() {
             return this.origins;
         }
 

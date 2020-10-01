@@ -39,11 +39,6 @@ import org.polypheny.fram.standalone.TransactionInfos;
 
 public interface Protocol {
 
-
-    Protocol setUp( final Protocol protocol );
-
-    Protocol setDown( final Protocol protocol );
-
     ConnectionProperties connectionSync( final ConnectionInfos connection, final ConnectionProperties newConnectionProperties ) throws RemoteException;
 
     ResultSetInfos prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;

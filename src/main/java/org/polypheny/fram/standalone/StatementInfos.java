@@ -20,6 +20,7 @@ package org.polypheny.fram.standalone;
 import io.vavr.Function1;
 import io.vavr.Function4;
 import io.vavr.Function5;
+import java.sql.SQLFeatureNotSupportedException;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Collection;
 import java.util.Collections;
@@ -40,6 +41,7 @@ import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
@@ -120,17 +122,40 @@ public class StatementInfos {
     }
 
 
-    public QueryResultSet createResultSet( Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults, Function1<Map<AbstractRemoteNode, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<AbstractRemoteNode, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
+    public <NodeType extends Node> QueryResultSet createResultSet( NodeType origin, RemoteExecuteResult remoteResult ) {
         synchronized ( this ) {
-            this.resultSetInfos = new QueryResultSet( this, remoteResults, resultsMergeFunction, resultsFetchFunction );
+            this.resultSetInfos = new QueryResultSet<NodeType>( this, origin, remoteResult );
             return (QueryResultSet) this.resultSetInfos;
         }
     }
 
 
-    public BatchResultSetInfos createBatchResultSet( Map<AbstractRemoteNode, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<AbstractRemoteNode, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
+    public <NodeType extends Node> QueryResultSet createResultSet( Map<NodeType, RemoteExecuteResult> remoteResults, Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction ) {
+        return this.<NodeType>createResultSet( remoteResults, resultsMergeFunction, ( abstractRemoteNodeRemoteExecuteResultMap, connectionInfos, statementInfos, aLong, integer ) -> {
+            throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
+        } );
+    }
+
+
+    public <NodeType extends Node> QueryResultSet createResultSet( Map<NodeType, RemoteExecuteResult> remoteResults, Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
         synchronized ( this ) {
-            this.resultSetInfos = new BatchResultSetInfos( this, remoteBatchResults, resultMergeFunction );
+            this.resultSetInfos = new QueryResultSet<NodeType>( this, remoteResults, resultsMergeFunction, resultsFetchFunction );
+            return (QueryResultSet) this.resultSetInfos;
+        }
+    }
+
+
+    public <NodeType extends Node> BatchResultSetInfos createBatchResultSet( NodeType origin, RemoteExecuteBatchResult remoteBatchResult ) {
+        synchronized ( this ) {
+            this.resultSetInfos = new BatchResultSetInfos<NodeType>( this, origin, remoteBatchResult );
+            return (BatchResultSetInfos) this.resultSetInfos;
+        }
+    }
+
+
+    public <NodeType extends Node> BatchResultSetInfos createBatchResultSet( Map<NodeType, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<NodeType, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
+        synchronized ( this ) {
+            this.resultSetInfos = new BatchResultSetInfos<NodeType>( this, remoteBatchResults, resultMergeFunction );
             return (BatchResultSetInfos) this.resultSetInfos;
         }
     }

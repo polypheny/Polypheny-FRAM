@@ -31,7 +31,7 @@ import org.jgroups.blocks.ResponseMode;
 
 
 @EqualsAndHashCode(callSuper = false)
-public abstract class AbstractRemoteNode extends AbstractNode implements Serializable {
+public abstract class AbstractRemoteNode extends PhysicalNode implements RemoteMeta, Serializable {
 
     private static final long serialVersionUID = 2020_03_26__17_20L;
 

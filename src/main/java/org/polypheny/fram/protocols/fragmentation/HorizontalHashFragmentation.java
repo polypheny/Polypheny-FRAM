@@ -19,10 +19,10 @@ package org.polypheny.fram.protocols.fragmentation;
 
 import io.vavr.Function2;
 import io.vavr.Function3;
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.rmi.RemoteException;
 import java.sql.SQLException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -41,8 +41,6 @@ import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
-import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlBasicCall;
@@ -59,6 +57,7 @@ import org.apache.calcite.sql.SqlUpdate;
 import org.jgroups.Address;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.FragmentationProtocol;
 import org.polypheny.fram.remote.AbstractRemoteNode;
@@ -72,10 +71,8 @@ import org.polypheny.fram.standalone.CatalogUtils;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
-import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.polypheny.fram.standalone.Utils;
-import org.polypheny.fram.standalone.Utils.WrappingException;
 import org.polypheny.fram.standalone.parser.sql.SqlNodeUtils;
 
 
@@ -136,6 +133,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     }
 
 
+    @Override
+    public <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
     protected ResultSetInfos prepareAndExecuteDataManipulationInsert( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlInsert sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataManipulationInsert( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
@@ -166,12 +169,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
     public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
 
@@ -190,6 +187,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             default:
                 throw new UnsupportedOperationException( "Not supported" );
         }
+    }
+
+
+    @Override
+    public <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
+        return null;
     }
 
 
@@ -305,6 +308,7 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
         }
 
         // send to all
+        // todo: if condition contains only equals -> get the responsible node; else -> send to all
         final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
         // handle the responses of the execution
         final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
@@ -346,12 +350,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
     }
 
 
-    @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
     /*
      *
      */
@@ -377,6 +375,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             default:
                 throw new UnsupportedOperationException( "Not supported" );
         }
+    }
+
+
+    @Override
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -863,12 +867,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
     public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepareDataQuery( connection: {}, statement: {}, sql: {}, maxRowCount: {} )", connection, statement, sql, maxRowCount );
 
@@ -887,6 +885,12 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
             default:
                 throw new UnsupportedOperationException( "Not supported" );
         }
+    }
+
+
+    @Override
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -1152,68 +1156,6 @@ public class HorizontalHashFragmentation extends AbstractProtocol implements Fra
                     //
                     throw Utils.wrapException( new SQLException( "SELECT statements cannot be executed in a batch context." ) );
                 } );
-    }
-
-
-    @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
-    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
-        if ( !(statement instanceof PreparedStatementInfos) ) {
-            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
-        }
-
-        try {
-            return ((PreparedStatementInfos) statement).execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame );
-        } catch ( WrappingException we ) {
-            final Throwable t = Utils.xtractException( we );
-            if ( t instanceof NoSuchStatementException ) {
-                throw (NoSuchStatementException) t;
-            }
-            if ( t instanceof RemoteException ) {
-                throw (RemoteException) t;
-            }
-            throw we;
-        }
-    }
-
-
-    @Override
-    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> listOfParameterValues ) throws NoSuchStatementException, RemoteException {
-        if ( !(statement instanceof PreparedStatementInfos) ) {
-            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
-        }
-
-        // only DML
-
-        try {
-            return ((PreparedStatementInfos) statement).executeBatch( connection, transaction, statement, listOfParameterValues );
-        } catch ( WrappingException we ) {
-            final Throwable t = Utils.xtractException( we );
-            if ( t instanceof NoSuchStatementException ) {
-                throw (NoSuchStatementException) t;
-            }
-            if ( t instanceof RemoteException ) {
-                throw (RemoteException) t;
-            }
-            throw we;
-        }
-    }
-
-
-    @Override
-    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
-    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 

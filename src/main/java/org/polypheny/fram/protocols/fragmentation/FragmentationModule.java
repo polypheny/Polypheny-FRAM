@@ -23,6 +23,7 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.rmi.RemoteException;
 import java.sql.SQLException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -34,18 +35,12 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import org.apache.calcite.avatica.Meta;
-import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
 import org.apache.calcite.avatica.Meta.Signature;
-import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.avatica.MissingResultsException;
-import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlDelete;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -59,11 +54,12 @@ import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.jgroups.Address;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.datadistribution.RecordIdentifier;
 import org.polypheny.fram.datadistribution.Transaction;
 import org.polypheny.fram.datadistribution.Transaction.Operation;
+import org.polypheny.fram.datadistribution.VirtualNode;
 import org.polypheny.fram.protocols.AbstractProtocol;
-import org.polypheny.fram.protocols.Protocol;
 import org.polypheny.fram.protocols.Protocol.FragmentationProtocol;
 import org.polypheny.fram.protocols.fragmentation.HorizontalHashFragmentation.HorizontalExecuteResultMergeFunction;
 import org.polypheny.fram.remote.AbstractRemoteNode;
@@ -78,37 +74,14 @@ import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 import org.polypheny.fram.standalone.StatementInfos;
-import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 import org.polypheny.fram.standalone.Utils;
-import org.polypheny.fram.standalone.Utils.WrappingException;
 import org.polypheny.fram.standalone.parser.sql.SqlNodeUtils;
 
 
 public class FragmentationModule extends AbstractProtocol implements FragmentationProtocol {
 
-    protected Protocol down;
-
-
-    @Override
-    public Protocol setUp( Protocol protocol ) {
-        return null;
-    }
-
-
-    @Override
-    public Protocol setDown( Protocol protocol ) {
-        this.down = protocol;
-        return this;
-    }
-
-
-    @Override
-    public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
-        // todo: for now
-        return super.connectionSync( connection, newConnectionProperties );
-    }
-
+    private FragmentationSchema currentSchema = new FragmentationSchema();
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
@@ -124,7 +97,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
@@ -152,7 +125,27 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
     }
 
 
-    public ResultSetInfos prepareAndExecuteDataQuerySelect( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
+
+        switch ( sql.getKind() ) {
+            // See org.apache.calcite.sql.SqlKind.QUERY
+            case SELECT:
+                return prepareAndExecuteDataQuerySelect( connection, transaction, statement, (SqlSelect) sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
+
+            case UNION:
+            case INTERSECT:
+            case EXCEPT:
+            case VALUES:
+            case WITH:
+            case ORDER_BY:
+            case EXPLICIT_TABLE:
+            default:
+                throw new UnsupportedOperationException( "Not supported" );
+        }
+    }
+
+
+    protected ResultSetInfos prepareAndExecuteDataQuerySelect( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
 
         if ( SqlNodeUtils.SELECT_UTILS.selectListContainsAggregate( sql ) ) {
@@ -164,7 +157,19 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
     }
 
 
-    private ResultSetInfos prepareAndExecuteDataQuerySelectAggregate( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuerySelect( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteDataQuery( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
+
+        if ( SqlNodeUtils.SELECT_UTILS.selectListContainsAggregate( sql ) ) {
+            // SELECT MIN/MAX/AVG/ FROM ...
+            return prepareAndExecuteDataQuerySelectAggregate( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
+        }
+
+        throw new UnsupportedOperationException( "Not implemented yet." );
+    }
+
+
+    protected ResultSetInfos prepareAndExecuteDataQuerySelectAggregate( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         LOGGER.trace( "prepareAndExecuteDataQueryAggregate( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame );
 
         // FAIL-FAST
@@ -184,17 +189,18 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
             aggregateNode = asExpressionOrAggregateNode;
         }
 
-        final Map<String, Integer> primaryKeyColumnNamesAndIndexes = CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 2 ), SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 1 ), SqlNodeUtils.IDENTIFIER_UTILS.getPartOfCompoundIdentifier( targetTable, 0 ) );
-        final Set<Integer> primaryKeyColumnsIndexes = new TreeSet<>( primaryKeyColumnNamesAndIndexes.values() ); // naturally ordered and thus the indexes of the primary key columns are in the correct order
-        final Map<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new HashMap<>();
+        final List<Fragment> targetFragements;
+        if ( sql.hasWhere() ) {
+            // todo: know where to send it
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        } else {
+            targetFragements = this.currentSchema.allFragments();
+        }
 
-        final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( sql );
-
-        // send to all
-        // todo: replace this with a call to the protocol down
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame );
         // handle the responses of the execution
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = ClusterUtils.getRemoteResults( connection.getCluster(), responseList );
+        final Map<Fragment, RemoteExecuteResult> prepareAndExecuteResults = down.prepareAndExecute( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
+                targetFragements
+        );
 
         switch ( aggregateNode.getKind() ) {
             case MAX:
@@ -203,7 +209,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
                         SELECT MAX(`USERTABLE`.`YCSB_KEY`)
                         FROM `PUBLIC`.`USERTABLE` AS `USERTABLE`
                  */
-                return statement.createResultSet( remoteResults,
+                return statement.createResultSet( prepareAndExecuteResults,
                         /* mergeResults */ ( origins ) -> {
                             int maxValue = Integer.MIN_VALUE;
                             for ( RemoteExecuteResult rex : origins.values() ) {
@@ -233,8 +239,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
     }
 
 
-    @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuerySelectAggregate( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
@@ -678,7 +683,7 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
@@ -702,6 +707,12 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
             default:
                 throw new UnsupportedOperationException( "Not supported" );
         }
+    }
+
+
+    @Override
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
@@ -1061,101 +1072,25 @@ public class FragmentationModule extends AbstractProtocol implements Fragmentati
 
 
     @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
-    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
-        if ( !(statement instanceof PreparedStatementInfos) ) {
-            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
-        }
-
-        try {
-            return ((PreparedStatementInfos) statement).execute( connection, transaction, statement, parameterValues, maxRowsInFirstFrame );
-        } catch ( WrappingException we ) {
-            final Throwable t = Utils.xtractException( we );
-            if ( t instanceof NoSuchStatementException ) {
-                throw (NoSuchStatementException) t;
-            }
-            if ( t instanceof RemoteException ) {
-                throw (RemoteException) t;
-            }
-            throw we;
-        }
-    }
-
-
-    @Override
-    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        if ( !(statement instanceof PreparedStatementInfos) ) {
-            throw new IllegalArgumentException( "The provided statement is not a PreparedStatement." );
-        }
-
-        try {
-            return ((PreparedStatementInfos) statement).executeBatch( connection, transaction, statement, parameterValues );
-        } catch ( WrappingException we ) {
-            final Throwable t = Utils.xtractException( we );
-            if ( t instanceof NoSuchStatementException ) {
-                throw (NoSuchStatementException) t;
-            }
-            if ( t instanceof RemoteException ) {
-                throw (RemoteException) t;
-            }
-            throw we;
-        }
-    }
-
-
-    @Override
-    public Frame fetch( ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
-    public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        // todo: for now
-        super.commit( connection, transaction );
-    }
-
-
-    @Override
-    public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        // todo: for now
-        super.rollback( connection, transaction );
-    }
-
-
-    @Override
-    public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
-        // todo: for now
-        super.closeStatement( connection, statement );
-    }
-
-
-    @Override
-    public void closeConnection( ConnectionInfos connection ) throws RemoteException {
-        // todo: for now
-        super.closeConnection( connection );
-    }
-
-
-    @Override
-    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        return false;
-    }
-
-
-    @Override
     public ReplicationProtocol setReplicationProtocol( ReplicationProtocol replicationProtocol ) {
         return null;
+    }
+
+
+    public static class FragmentationSchema {
+
+        public Fragment lookupFragment( RecordIdentifier record ) {
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+
+
+        public List<Fragment> allFragments() {
+            throw new UnsupportedOperationException( "Not implemented yet." );
+        }
+    }
+
+
+    public static class Fragment extends VirtualNode {
+
     }
 }

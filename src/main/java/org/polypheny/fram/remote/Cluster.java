@@ -255,7 +255,7 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public AbstractNode thisNode() {
+    public PhysicalNode thisNode() {
         if ( this.channel.isConnected() ) {
             return thisNode;
         }

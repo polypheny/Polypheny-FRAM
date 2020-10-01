@@ -75,12 +75,7 @@ public class WorkloadAnalyzer implements Protocol {
     private final boolean rpkDQL;
     private final boolean rpkNoPrimaryKey;
 
-    private AbstractProtocol down;
-
-
-    public WorkloadAnalyzer() {
-        this( null );
-    }
+    private AbstractProtocol delegate;
 
 
     public WorkloadAnalyzer( final AbstractProtocol protocol ) {
@@ -90,35 +85,19 @@ public class WorkloadAnalyzer implements Protocol {
         rpkDQL = configuration.getString( "standalone.datastore.getGeneratedKeys.return_primary_key_for_dql" ).equalsIgnoreCase( GET_GENERATED_KEYS_CONFIGURATION_OPTION_RETURN_PRIMARY_KEY );
         rpkNoPrimaryKey = configuration.getString( "standalone.datastore.getGeneratedKeys.tables_without_primary_key" ).equalsIgnoreCase( GET_GENERATED_KEYS_CONFIGURATION_OPTION_RETURN_PRIMARY_KEY );
 
-        this.down = protocol;
-    }
-
-
-    @Override
-    public Protocol setUp( Protocol protocol ) {
-        throw new IllegalStateException( "You cannot have a protocol before the workload analyzer" );
-    }
-
-
-    @Override
-    public Protocol setDown( final Protocol protocol ) {
-        if ( protocol instanceof AbstractProtocol ) {
-            return this.down = (AbstractProtocol) protocol;
-        } else {
-            throw new IllegalArgumentException( "An instance of AbstractProtocol is required." );
-        }
+        this.delegate = protocol;
     }
 
 
     @Override
     public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
-        return down.connectionSync( connection, newConnectionProperties );
+        return delegate.connectionSync( connection, newConnectionProperties );
     }
 
 
     @Override
     public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return down.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+        return delegate.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
@@ -153,7 +132,7 @@ public class WorkloadAnalyzer implements Protocol {
         final ResultSetInfos executeResult;
         if ( rpkDML && rpkNoPrimaryKey ) {
             // best case: we can use RETURN_PRIMARY_KEY even if the table does not contain a primary key (then the values of all columns are returned)
-            executeResult = down.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+            executeResult = delegate.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } else {
             // we need to check if the table has a primary key
             final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
@@ -161,7 +140,7 @@ public class WorkloadAnalyzer implements Protocol {
 
             if ( rpkDML && tableHasPrimaryKeys ) {
                 // the table has a primary key and we can use RETURN_PRIMARY_KEY
-                executeResult = down.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                executeResult = delegate.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
             } else {
                 // we cannot use RETURN_PRIMARY_KEY and thus we need to request the return of columns using an int array
                 final int[] columnIndexes;
@@ -186,8 +165,8 @@ public class WorkloadAnalyzer implements Protocol {
                         columnIndexes[ci] = ci;
                     }
                 }
-
-                executeResult = down.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, callback );
+                throw new UnsupportedOperationException( "Not implemented yet." );
+                //executeResult = down.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, callback );
             }
         }
 
@@ -278,7 +257,7 @@ public class WorkloadAnalyzer implements Protocol {
         final ResultSetInfos executeResult;
         if ( rpkDQL && rpkNoPrimaryKey ) {
             // best case: we can use RETURN_PRIMARY_KEY even if the table does not contain a primary key (then the values of all columns are returned)
-            executeResult = down.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+            executeResult = delegate.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } else {
             // we need to check if the table has a primary key
             final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
@@ -286,7 +265,7 @@ public class WorkloadAnalyzer implements Protocol {
 
             if ( rpkDQL && tableHasPrimaryKeys ) {
                 // the table has a primary key and we can use RETURN_PRIMARY_KEY
-                executeResult = down.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                executeResult = delegate.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
             } else {
                 // we cannot use RETURN_PRIMARY_KEY and thus we need to request the return of columns using an int array
                 final int[] columnIndexes;
@@ -311,8 +290,8 @@ public class WorkloadAnalyzer implements Protocol {
                         columnIndexes[ci] = ci;
                     }
                 }
-
-                executeResult = down.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, callback );
+                throw new UnsupportedOperationException( "Not implemented yet." );
+                //executeResult = down.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, callback );
             }
         }
 
@@ -372,7 +351,7 @@ public class WorkloadAnalyzer implements Protocol {
     @Override
     public ResultSetInfos prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         try {
-            return down.prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+            return delegate.prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } finally {
             final Transaction t = Transaction.getTransaction( transaction.getTransactionId() );
             Workload.THIS_IS_A_TEST_REMOVE_ME.addTransaction( t );
@@ -384,7 +363,7 @@ public class WorkloadAnalyzer implements Protocol {
     @Override
     public ResultSetInfos prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         try {
-            return down.prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+            return delegate.prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } finally {
             Transaction.removeTransaction( Transaction.getTransaction( transaction.getTransactionId() ) );
         }
@@ -422,7 +401,7 @@ public class WorkloadAnalyzer implements Protocol {
         final PreparedStatementInfos preparedStatement;
         if ( rpkDML && rpkNoPrimaryKey ) {
             // best case: we can use RETURN_PRIMARY_KEY even if the table does not contain a primary key (then the values of all columns are returned)
-            preparedStatement = (PreparedStatementInfos) down.prepareDataManipulation( connection, statement, sql, maxRowCount );
+            preparedStatement = (PreparedStatementInfos) delegate.prepareDataManipulation( connection, statement, sql, maxRowCount );
         } else {
             // we need to check if the table has a primary key
             final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
@@ -430,7 +409,7 @@ public class WorkloadAnalyzer implements Protocol {
 
             if ( rpkDML && tableHasPrimaryKeys ) {
                 // the table has a primary key and we can use RETURN_PRIMARY_KEY
-                preparedStatement = (PreparedStatementInfos) down.prepareDataManipulation( connection, statement, sql, maxRowCount );
+                preparedStatement = (PreparedStatementInfos) delegate.prepareDataManipulation( connection, statement, sql, maxRowCount );
             } else {
                 // we cannot use RETURN_PRIMARY_KEY and thus we need to request the return of columns using an int array
                 final int[] columnIndexes;
@@ -455,8 +434,8 @@ public class WorkloadAnalyzer implements Protocol {
                         columnIndexes[ci] = ci;
                     }
                 }
-
-                preparedStatement = (PreparedStatementInfos) down.prepareDataManipulation( connection, statement, sql, maxRowCount, columnIndexes );
+                throw new UnsupportedOperationException( "Not implemented yet." );
+                //preparedStatement = (PreparedStatementInfos) down.prepareDataManipulation( connection, statement, sql, maxRowCount, columnIndexes );
             }
         }
 
@@ -555,7 +534,7 @@ public class WorkloadAnalyzer implements Protocol {
         final PreparedStatementInfos preparedStatement;
         if ( rpkDQL && rpkNoPrimaryKey ) {
             // best case: we can use RETURN_PRIMARY_KEY even if the table does not contain a primary key (then the values of all columns are returned)
-            preparedStatement = (PreparedStatementInfos) down.prepareDataQuery( connection, statement, sql, maxRowCount );
+            preparedStatement = (PreparedStatementInfos) delegate.prepareDataQuery( connection, statement, sql, maxRowCount );
         } else {
             // we need to check if the table has a primary key
             final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
@@ -563,7 +542,7 @@ public class WorkloadAnalyzer implements Protocol {
 
             if ( rpkDQL && tableHasPrimaryKeys ) {
                 // the table has a primary key and we can use RETURN_PRIMARY_KEY
-                preparedStatement = (PreparedStatementInfos) down.prepareDataQuery( connection, statement, sql, maxRowCount );
+                preparedStatement = (PreparedStatementInfos) delegate.prepareDataQuery( connection, statement, sql, maxRowCount );
             } else {
                 // we cannot use RETURN_PRIMARY_KEY and thus we need to request the return of columns using an int array
                 final int[] columnIndexes;
@@ -588,8 +567,8 @@ public class WorkloadAnalyzer implements Protocol {
                         columnIndexes[ci] = ci;
                     }
                 }
-
-                preparedStatement = (PreparedStatementInfos) down.prepareDataQuery( connection, statement, sql, maxRowCount, columnIndexes );
+                throw new UnsupportedOperationException( "Not implemented yet." );
+                //preparedStatement = (PreparedStatementInfos) down.prepareDataQuery( connection, statement, sql, maxRowCount, columnIndexes );
             }
         }
 
@@ -664,7 +643,7 @@ public class WorkloadAnalyzer implements Protocol {
 
         final PreparedStatementInfos preparedStatement = (PreparedStatementInfos) statement;
 
-        final ResultSetInfos resultSet = down.execute( connection, transaction, preparedStatement, parameterValues, maxRowsInFirstFrame );
+        final ResultSetInfos resultSet = delegate.execute( connection, transaction, preparedStatement, parameterValues, maxRowsInFirstFrame );
 
         // execute the workload analysis function which was created during the prepare call
         preparedStatement.getWorkloadAnalysisFunction().apply( connection, transaction, preparedStatement, parameterValues, resultSet );
@@ -675,7 +654,7 @@ public class WorkloadAnalyzer implements Protocol {
 
     @Override
     public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return down.executeBatch( connection, transaction, statement, parameterValues );
+        return delegate.executeBatch( connection, transaction, statement, parameterValues );
     }
 
 
@@ -688,7 +667,7 @@ public class WorkloadAnalyzer implements Protocol {
     @Override
     public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
         try {
-            down.commit( connection, transaction );
+            delegate.commit( connection, transaction );
         } finally {
             final Transaction t = Transaction.getTransaction( transaction.getTransactionId() );
             Workload.THIS_IS_A_TEST_REMOVE_ME.addTransaction( t );
@@ -700,7 +679,7 @@ public class WorkloadAnalyzer implements Protocol {
     @Override
     public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
         try {
-            down.rollback( connection, transaction );
+            delegate.rollback( connection, transaction );
         } finally {
             Transaction.removeTransaction( Transaction.getTransaction( transaction.getTransactionId() ) );
         }
@@ -709,24 +688,24 @@ public class WorkloadAnalyzer implements Protocol {
 
     @Override
     public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
-        down.closeStatement( connection, statement );
+        delegate.closeStatement( connection, statement );
     }
 
 
     @Override
     public void closeConnection( ConnectionInfos connection ) throws RemoteException {
-        down.closeConnection( connection );
+        delegate.closeConnection( connection );
     }
 
 
     @Override
     public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        return down.createIterable( connection, transaction, statement, state, signature, parameterValues, firstFrame );
+        return delegate.createIterable( connection, transaction, statement, state, signature, parameterValues, firstFrame );
     }
 
 
     @Override
     public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        return down.syncResults( connection, transaction, statement, state, offset );
+        return delegate.syncResults( connection, transaction, statement, state, offset );
     }
 }

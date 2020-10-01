@@ -34,7 +34,7 @@ import org.polypheny.fram.Catalog;
  *
  */
 @EqualsAndHashCode(callSuper = false, onlyExplicitlyIncluded = true)
-public abstract class AbstractLocalNode extends AbstractNode implements MethodLookup {
+public abstract class AbstractLocalNode extends PhysicalNode implements RemoteMeta, MethodLookup {
 
     protected static final Map<UUID, Address> CLUSTER_ID_TO_LOCAL_NODE_ADDRESS = new HashMap<>();
 

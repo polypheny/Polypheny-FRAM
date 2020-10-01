@@ -32,7 +32,6 @@ import lombok.EqualsAndHashCode;
 import org.polypheny.fram.datadistribution.Transaction.Action;
 
 
-@EqualsAndHashCode(doNotUseGetters = true, onlyExplicitlyIncluded = true)
 public class Transaction implements Iterable<Action>, Serializable {
 
     private static final Map<ByteBuffer, Transaction> TRANSACTIONS = new HashMap<>();
@@ -54,7 +53,6 @@ public class Transaction implements Iterable<Action>, Serializable {
 
     private final byte[] id = new byte[javax.transaction.xa.Xid.MAXBQUALSIZE];
 
-    @EqualsAndHashCode.Include
     private final List<Action> actions = new LinkedList<>();
 
     private volatile boolean containsWriteOperation = false;

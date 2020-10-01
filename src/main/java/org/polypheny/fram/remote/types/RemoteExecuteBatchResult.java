@@ -25,7 +25,7 @@ import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 /**
  *
  */
-public class RemoteExecuteBatchResult implements Serializable {
+public class RemoteExecuteBatchResult implements RemoteResult, Serializable {
 
     private static final long serialVersionUID = 1L;
     private transient ExecuteBatchResult theExeucteBatchResult;

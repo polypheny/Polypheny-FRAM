@@ -19,7 +19,9 @@ package org.polypheny.fram.protocols;
 
 import java.io.Serializable;
 import java.rmi.RemoteException;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -32,6 +34,10 @@ import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
+import org.polypheny.fram.Node;
+import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.types.RemoteExecuteResult;
+import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
@@ -44,13 +50,7 @@ import org.polypheny.fram.standalone.TransactionInfos;
 public class Executor extends AbstractProtocol implements Protocol {
 
     @Override
-    public Protocol setUp( Protocol protocol ) {
-        return null;
-    }
-
-
-    @Override
-    public Protocol setDown( Protocol protocol ) {
+    public AbstractProtocol setDown( AbstractProtocol protocol ) {
         throw new ProtocolException( "Executor cannot have a protocol down the chain." );
     }
 
@@ -74,7 +74,7 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -86,7 +86,7 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, int[] columnIndexes, PrepareCallback callback ) throws RemoteException {
+    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -110,7 +110,7 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
         return null;
     }
 
@@ -137,6 +137,12 @@ public class Executor extends AbstractProtocol implements Protocol {
     }
 
 
+    @Override
+    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+        return null;
+    }
+
+
     protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
     }
@@ -144,12 +150,6 @@ public class Executor extends AbstractProtocol implements Protocol {
 
     protected StatementInfos prepareDataQuerySelectAggregate( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
         throw new UnsupportedOperationException( "Not implemented yet." );
-    }
-
-
-    @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, int[] columnIndexes ) throws RemoteException {
-        return null;
     }
 
 

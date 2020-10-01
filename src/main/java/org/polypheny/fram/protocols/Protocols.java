@@ -56,6 +56,7 @@ public enum Protocols implements Protocol {
     HASH_FRAGMENTATION( new HorizontalHashFragmentation() ),
     FRAM( new FragmentationModule(), new ReplicationModule(), new AllocationModule(), new MigrationModule(), new Executor() ),
     RFAM( new ReplicationModule(), new FragmentationModule(), new AllocationModule(), new MigrationModule(), new Executor() ),
+    TEST( new FragmentationModule(), new AllocationModule(), new Executor() ),
     ;
 
 
@@ -87,18 +88,6 @@ public enum Protocols implements Protocol {
 
 
     protected final Protocol delegate;
-
-
-    @Override
-    public Protocol setUp( Protocol protocol ) {
-        return delegate.setUp( protocol );
-    }
-
-
-    @Override
-    public Protocol setDown( Protocol protocol ) {
-        return delegate.setDown( protocol );
-    }
 
 
     @Override

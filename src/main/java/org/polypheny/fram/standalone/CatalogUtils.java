@@ -77,4 +77,17 @@ public class CatalogUtils {
         Collections.sort( primaryKeyColumnsIndexes );
         return primaryKeyColumnsIndexes;
     }
+
+
+    public static List<String> lookupColumnsNames( final ConnectionInfos connection, final String catalogName, final String schemaName, final String tableName ) {
+        final MetaResultSet columnInfos = connection.getCatalog().getColumns( connection, catalogName, Meta.Pat.of( schemaName ), Meta.Pat.of( tableName ), Meta.Pat.of( null ) );
+        final List<String> columnsNames = new LinkedList<>();
+        for ( Object row : columnInfos.firstFrame.rows ) {
+            Object[] cells = (Object[]) row;
+            final int columnIndex = (int) cells[16] - 1; // convert ordinal to index
+            final String columnName = (String) cells[3];
+            columnsNames.add( columnName );
+        }
+        return columnsNames;
+    }
 }

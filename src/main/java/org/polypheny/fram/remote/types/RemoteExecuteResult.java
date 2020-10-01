@@ -17,7 +17,6 @@
 package org.polypheny.fram.remote.types;
 
 
-import org.polypheny.fram.remote.RemoteNode;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.LinkedList;
@@ -27,12 +26,13 @@ import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.Signature;
 import org.apache.calcite.avatica.proto.Common;
+import org.polypheny.fram.remote.RemoteNode;
 
 
 /**
  *
  */
-public class RemoteExecuteResult implements Serializable {
+public class RemoteExecuteResult implements RemoteResult, Serializable {
 
     private static final long serialVersionUID = 1L;
     private transient ExecuteResult theResult;
