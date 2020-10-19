@@ -27,7 +27,12 @@ public abstract class VirtualNode implements Node, Serializable {
     public final UUID id;
 
 
-    public VirtualNode() {
+    protected VirtualNode() {
         this.id = UUID.randomUUID();
+    }
+
+
+    protected VirtualNode( final UUID id ) {
+        this.id = id;
     }
 }

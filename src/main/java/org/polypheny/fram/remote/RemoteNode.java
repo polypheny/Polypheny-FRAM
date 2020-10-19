@@ -32,6 +32,7 @@ import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -170,7 +171,7 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.closeStatement( remoteStatementHandle ) );
 
         LOGGER.trace( "{}: execute( remoteStatementHandle: {} ) = {VOID}", this.address, remoteStatementHandle );
-        return null; //
+        return Utils.VOID; //
     }
 
 
@@ -182,7 +183,7 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.closeConnection( remoteConnectionHandle ) );
 
         LOGGER.trace( "{}: closeConnection( remoteConnectionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle );
-        return null; //
+        return Utils.VOID; //
     }
 
 
@@ -194,7 +195,7 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.abort( remoteConnectionHandle, remoteTransactionHandle ) );
 
         LOGGER.trace( "{}: abortConnection( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        return null; //
+        return Utils.VOID; //
     }
 
 
@@ -217,7 +218,7 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
 
         LOGGER.trace( "{}: onePhaseCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        return null; //
+        return Utils.VOID; //
     }
 
 
@@ -240,7 +241,7 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.commit( remoteConnectionHandle, remoteTransactionHandle ) );
 
         LOGGER.trace( "{}: commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        return null; //
+        return Utils.VOID; //
     }
 
 
@@ -252,6 +253,6 @@ public class RemoteNode extends AbstractRemoteNode implements Serializable {
         this.callRemoteMethod( Method.rollback( remoteConnectionHandle, remoteTransactionHandle ) );
 
         LOGGER.trace( "{}: rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) = {VOID}", this.address, remoteConnectionHandle, remoteTransactionHandle );
-        return null; //
+        return Utils.VOID; //
     }
 }

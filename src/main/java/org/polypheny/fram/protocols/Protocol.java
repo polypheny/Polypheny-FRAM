@@ -34,6 +34,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
 
@@ -43,6 +44,8 @@ public interface Protocol {
 
     ResultSetInfos prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
+    ResultSetInfos prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+
     ResultSetInfos prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
     ResultSetInfos prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
@@ -51,9 +54,9 @@ public interface Protocol {
 
     ResultSetInfos prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
 
-    StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    PreparedStatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
 
-    StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    PreparedStatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
 
     ResultSetInfos execute( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final List<TypedValue> parameterValues, final int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException;
 

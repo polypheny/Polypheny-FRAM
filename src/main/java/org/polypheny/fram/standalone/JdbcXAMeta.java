@@ -25,7 +25,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -480,7 +479,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             if ( info == null ) {
                 throw new NoSuchStatementException( h );
             }
-            final Statement statement = info.statement;
+            final java.sql.Statement statement = info.statement;
 
             // Make sure that we limit the number of rows for the query
             if ( maxRowCount > 0 ) {
@@ -533,7 +532,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             if ( info == null ) {
                 throw new NoSuchStatementException( h );
             }
-            final Statement statement = info.statement;
+            final java.sql.Statement statement = info.statement;
 
             // Make sure that we limit the number of rows for the query
             if ( maxRowCount > 0 ) {
@@ -689,7 +688,7 @@ public class JdbcXAMeta extends JdbcMeta implements XAMeta {
             if ( info == null ) {
                 throw new NoSuchStatementException( h );
             }
-            final Statement statement = info.statement;
+            final java.sql.Statement statement = info.statement;
             // Make sure that we limit the number of rows for the query
             if ( maxRowCount > 0 ) {
                 AvaticaUtils.setLargeMaxRows( statement, maxRowCount );

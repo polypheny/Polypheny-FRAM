@@ -394,7 +394,7 @@ packr {
         resources "${resourcesSrcDir}/log4j2.properties" // log4j2.properties is excluded by the jar task, thus we need to include it again
 
     mainClass project.properties['mainClass']
-    vmArgs 'Xms1g', /*'XX:MaxRAMPercentage=75',*/ 'Djava.net.preferIPv4Stack=true', 'Dcom.sun.management.jmxremote=true', 'Dcom.sun.management.jmxremote.port=7091', 'Dcom.sun.management.jmxremote.authenticate=false', 'Dcom.sun.management.jmxremote.ssl=false'
+    vmArgs /*'Xms1g', 'XX:MaxRAMPercentage=75',*/ 'Djava.net.preferIPv4Stack=true', '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005', 'Dcom.sun.management.jmxremote=true', 'Dcom.sun.management.jmxremote.port=7091', 'Dcom.sun.management.jmxremote.authenticate=false', 'Dcom.sun.management.jmxremote.ssl=false'
     minimizeJre "${resourcesSrcDir}/minimize/soft"// null = disable
 
     configureLinux64 {
@@ -546,7 +546,7 @@ application {
 }
 
 startScripts {
-    defaultJvmOpts = ['-Xms1g', /*'-XX:MaxRAMPercentage=75',*/ '-Djava.net.preferIPv4Stack=true', '-Dcom.sun.management.jmxremote=true', '-Dcom.sun.management.jmxremote.port=7091', '-Dcom.sun.management.jmxremote.authenticate=false', '-Dcom.sun.management.jmxremote.ssl=false', '-XX:+FlightRecorder']
+    defaultJvmOpts = [/*'-Xms1g', '-XX:MaxRAMPercentage=75',*/ '-Djava.net.preferIPv4Stack=true', '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005', '-Dcom.sun.management.jmxremote=true', '-Dcom.sun.management.jmxremote.port=7091', '-Dcom.sun.management.jmxremote.authenticate=false', '-Dcom.sun.management.jmxremote.ssl=false', '-XX:+FlightRecorder']
 
     // The default script content is generated and
     // with the doLast method we can still alter
@@ -599,6 +599,7 @@ runtime {
             'java.transaction.xa',
             'java.xml',
             'jdk.httpserver',
+            'jdk.jdwp.agent',
             'jdk.jfr',
             'jdk.management.agent',
             'jdk.unsupported',

@@ -54,6 +54,7 @@ import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.transaction.TransactionHandle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -230,6 +231,166 @@ class LocalNode extends AbstractLocalNode {
 
 
     @Override
+    public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
+        final RemoteExecuteResult result;
+        try {
+            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
+            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
+
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
+            LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
+
+            final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
+            final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
+
+            if ( executeResult.resultSets.iterator().next().updateCount > -1 ) {
+                if ( executeResult.resultSets.iterator().next().updateCount > 0
+                        && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                    throw new SQLException( "Update Count > 0 but the affected Primary Keys result set is empty!" );
+                }
+            } else {
+                // result set
+                if ( executeResult.resultSets.iterator().next().firstFrame.rows.iterator().hasNext()
+                        && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                    throw new SQLException( "Data result set has rows but the affected Primary Keys result set is empty!" );
+                }
+            }
+
+            result = RemoteExecuteResult.fromExecuteResult( executeResult )
+                    .withGeneratedKeys( affectedPrimaryKeys );
+
+            // todo: Do we need to take action if the connection is set on AutoCommit?
+
+        } catch ( Exception ex ) {
+            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
+            throw new RemoteException( ex.getMessage(), ex );
+        }
+
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
+        final RemoteExecuteResult result;
+        try {
+            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
+            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
+
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
+            LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
+
+            final ExecuteResult executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK, columnIndexes );
+            final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
+
+            if ( executeResult.resultSets.iterator().next().updateCount > -1 ) {
+                if ( executeResult.resultSets.iterator().next().updateCount > 0
+                        && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                    throw new SQLException( "Update Count > 0 but the affected Primary Keys result set is empty!" );
+                }
+            } else {
+                // result set
+                if ( executeResult.resultSets.iterator().next().firstFrame.rows.iterator().hasNext()
+                        && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                    throw new SQLException( "Data result set has rows but the affected Primary Keys result set is empty!" );
+                }
+            }
+
+            result = RemoteExecuteResult.fromExecuteResult( executeResult )
+                    .withGeneratedKeys( affectedPrimaryKeys );
+
+            // todo: Do we need to take action if the connection is set on AutoCommit?
+
+        } catch ( Exception ex ) {
+            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
+            throw new RemoteException( ex.getMessage(), ex );
+        }
+
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
+    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
+        final RemoteExecuteResult result;
+        try {
+            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
+            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
+
+            final ExecuteResult catalogExecuteResult = this.getCatalog().prepareAndExecuteDataDefinition( branchTransactionHandle, remoteStatementHandle.toStatementHandle(), globalCatalogSql, maxRowCount, maxRowsInFirstFrame );
+
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
+            LOGGER.debug( "executing xaMeta.prepareAndExecuteDataDefinition( ... ) in the context of {}", transaction );
+            final ExecuteResult storeExecuteResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), localStoreSql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
+
+            final List<Meta.MetaResultSet> resultSets = new LinkedList<>();
+            resultSets.addAll( storeExecuteResult.resultSets );
+            resultSets.addAll( catalogExecuteResult.resultSets );
+
+            result = RemoteExecuteResult.fromExecuteResult( new ExecuteResult( resultSets ) );
+
+            // todo: Do we need to take action if the connection is set on AutoCommit?
+
+        } catch ( Exception ex ) {
+            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
+            throw new RemoteException( ex.getMessage(), ex );
+        }
+
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame, result );
+        return result;
+    }
+
+
+    @Override
+    public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands );
+
+        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
+
+        final RemoteExecuteBatchResult result;
+        try {
+            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
+            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
+
+            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
+
+            final ExecuteBatchResult executeBatchResult = xaMeta.prepareAndExecuteBatch( statement.getStatementHandle(), sqlCommands );
+            final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
+
+            if ( executeBatchResult.updateCounts.length > 0
+                    && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                throw new SQLException( "Number of update counts > 0 but the affected Primary Keys result set is empty!" );
+            }
+
+            result = RemoteExecuteBatchResult.fromExecuteBatchResult( executeBatchResult )
+                    .withGeneratedKeys( affectedPrimaryKeys );
+
+            // todo: Do we need to take action if the connection is set on AutoCommit?
+
+        } catch ( Exception ex ) {
+            throw new RemoteException( ex.getMessage(), ex );
+        }
+
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
+        return result;
+    }
+
+
+    @Override
     public RemoteStatementHandle prepare( final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount ) throws RemoteException {
         LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {} )", remoteStatementHandle, sql, maxRowCount );
 
@@ -242,7 +403,9 @@ class LocalNode extends AbstractLocalNode {
             synchronized ( remoteToLocalStatementMap ) {
                 statement = remoteToLocalStatementMap.compute( remoteStatementHandle.toStatementHandle().toString(), ( handle, statementInfos ) -> {
                     if ( statementInfos != null ) {
-                        throw new IllegalStateException( "Illegal attempt to prepare an already present statement." );
+                        //throw new IllegalStateException( "Illegal attempt to prepare an already present statement." );
+                        LOGGER.warn( "{} for handle {} already exists!", statementInfos instanceof PreparedStatementInfos ? "PreparedStatement" : "Statement", handle );
+                        xaMeta.closeStatement( statementInfos.getStatementHandle() );
                     }
                     return new StatementInfos(
                             connection,
@@ -314,31 +477,24 @@ class LocalNode extends AbstractLocalNode {
                 deserializedParameterValues.add( TypedValue.fromProto( value ) );
             }
 
-            final ExecuteResult executeResult;
-            //if ( statement.hasPrimaryKeyColumnIndexes() ) {
-            final ExecuteResult resultSet = xaMeta.execute( statement.getStatementHandle(), deserializedParameterValues, maxRowsInFirstFrame );
+            final ExecuteResult executeResult = xaMeta.execute( statement.getStatementHandle(), deserializedParameterValues, maxRowsInFirstFrame );
             final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
-            final List<Meta.MetaResultSet> resultSets = new LinkedList<>();
-            resultSets.addAll( resultSet.resultSets );
-            resultSets.addAll( affectedPrimaryKeys.resultSets );
-            executeResult = new ExecuteResult( resultSets );
 
-            if ( resultSet.resultSets.iterator().next().updateCount > -1 ) {
-                if ( resultSet.resultSets.iterator().next().updateCount > 0
+            if ( executeResult.resultSets.iterator().next().updateCount > -1 ) {
+                if ( executeResult.resultSets.iterator().next().updateCount > 0
                         && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
                     throw new SQLException( "Update Count > 0 but the affected Primary Keys result set is empty!" );
                 }
             } else {
                 // result set
-                if ( resultSet.resultSets.iterator().next().firstFrame.rows.iterator().hasNext()
+                if ( executeResult.resultSets.iterator().next().firstFrame.rows.iterator().hasNext()
                         && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
                     throw new SQLException( "Data result set has rows but the affected Primary Keys result set is empty!" );
                 }
             }
-            //} else {
-            //    executeResult = xaMeta.execute( statement.getStatementHandle(), deserializedParameterValues, maxRowsInFirstFrame );
-            //}
-            result = RemoteExecuteResult.fromExecuteResult( executeResult );
+
+            result = RemoteExecuteResult.fromExecuteResult( executeResult )
+                    .withGeneratedKeys( affectedPrimaryKeys );
 
             // todo: Do we need to take action if the connection is set on AutoCommit?
 
@@ -348,22 +504,6 @@ class LocalNode extends AbstractLocalNode {
 
         LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, result );
         return result;
-    }
-
-
-    @Override
-    public Void closeStatement( RemoteStatementHandle remoteStatementHandle ) throws RemoteException {
-        LOGGER.trace( "closeStatement( remoteStatementHandle: {} )", remoteStatementHandle );
-
-        synchronized ( remoteToLocalStatementMap ) {
-            remoteToLocalStatementMap.computeIfPresent( remoteStatementHandle.toStatementHandle().toString(), ( statementHandle, statement ) -> {
-                xaMeta.closeStatement( statement.getStatementHandle() );
-                return null; // `null` == remove the mapping
-            } );
-        }
-
-        LOGGER.trace( "closeStatement( remoteStatementHandle: {} ) = {}", remoteStatementHandle, "<VOID>" );
-        return VOID;
     }
 
 
@@ -390,7 +530,15 @@ class LocalNode extends AbstractLocalNode {
             }
 
             final ExecuteBatchResult executeBatchResult = xaMeta.executeBatch( statement.getStatementHandle(), deserializedParameterValues );
-            result = RemoteExecuteBatchResult.fromExecuteBatchResult( executeBatchResult );
+            final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
+
+            if ( executeBatchResult.updateCounts.length > 0
+                    && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
+                throw new SQLException( "Number of update counts > 0 but the affected Primary Keys result set is empty!" );
+            }
+
+            result = RemoteExecuteBatchResult.fromExecuteBatchResult( executeBatchResult )
+                    .withGeneratedKeys( affectedPrimaryKeys );
 
             // todo: Do we need to take action if the connection is set on AutoCommit?
 
@@ -404,151 +552,6 @@ class LocalNode extends AbstractLocalNode {
 
 
     @Override
-    public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-
-        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
-
-        final RemoteExecuteResult result;
-        try {
-            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
-            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
-
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
-            LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
-
-            final ExecuteResult executeResult;
-            final ExecuteResult resultSet = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
-            final ExecuteResult affectedPrimaryKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
-            final List<Meta.MetaResultSet> resultSets = new LinkedList<>();
-            resultSets.addAll( resultSet.resultSets );
-            resultSets.addAll( affectedPrimaryKeys.resultSets );
-            executeResult = new ExecuteResult( resultSets );
-
-            if ( resultSet.resultSets.iterator().next().updateCount > -1 ) {
-                if ( resultSet.resultSets.iterator().next().updateCount > 0 && affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
-                    throw new SQLException( "Update Count > 0 but the affected Primary Keys result set is empty!" );
-                }
-            } else {
-                // result set
-                if ( affectedPrimaryKeys.resultSets.iterator().next().firstFrame.rows.iterator().hasNext() == false ) {
-                    LOGGER.error( "getGeneratedKeys() is not working with SELECTs." );
-                }
-            }
-            result = RemoteExecuteResult.fromExecuteResult( executeResult );
-
-            // todo: Do we need to take action if the connection is set on AutoCommit?
-
-        } catch ( Exception ex ) {
-            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
-            throw new RemoteException( ex.getMessage(), ex );
-        }
-
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
-        return result;
-    }
-
-
-    @Override
-    public RemoteExecuteResult prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final String sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame );
-
-        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
-
-        final RemoteExecuteResult result;
-        try {
-            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
-            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
-
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
-            LOGGER.debug( "executing xaMeta.prepareAndExecute( ... ) in the context of {}", transaction );
-
-            final ExecuteResult executeResult;
-            //if ( columnIndexes != null ) {
-            final ExecuteResult resultSet = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK, columnIndexes );
-            final ExecuteResult generatedKeys = xaMeta.getGeneratedKeys( statement.getStatementHandle(), -1 /* == unlimited */, -1 /* == unlimited */ );
-            final List<Meta.MetaResultSet> resultSets = new LinkedList<>();
-            resultSets.addAll( resultSet.resultSets );
-            resultSets.addAll( generatedKeys.resultSets );
-            executeResult = new ExecuteResult( resultSets );
-            //} else {
-            //    executeResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), sql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK, columnIndexes );
-            //}
-            result = RemoteExecuteResult.fromExecuteResult( executeResult );
-
-            // todo: Do we need to take action if the connection is set on AutoCommit?
-
-        } catch ( Exception ex ) {
-            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
-            throw new RemoteException( ex.getMessage(), ex );
-        }
-
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, result );
-        return result;
-    }
-
-
-    @Override
-    public RemoteExecuteResult prepareAndExecuteDataDefinition( RemoteTransactionHandle remoteTransactionHandle, RemoteStatementHandle remoteStatementHandle, String globalCatalogSql, String localStoreSql, long maxRowCount, int maxRowsInFirstFrame ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} )", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame );
-
-        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
-
-        final RemoteExecuteResult result;
-        try {
-            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
-            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
-
-            final ExecuteResult catalogExecuteResult = this.getCatalog().prepareAndExecuteDataDefinition( branchTransactionHandle, remoteStatementHandle.toStatementHandle(), globalCatalogSql, maxRowCount, maxRowsInFirstFrame );
-
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
-            LOGGER.debug( "executing xaMeta.prepareAndExecuteDataDefinition( ... ) in the context of {}", transaction );
-            final ExecuteResult storeExecuteResult = xaMeta.prepareAndExecute( statement.getStatementHandle(), localStoreSql, maxRowCount, maxRowsInFirstFrame, NOOP_PREPARE_CALLBACK );
-
-            final List<Meta.MetaResultSet> resultSets = new LinkedList<>();
-            resultSets.addAll( storeExecuteResult.resultSets );
-            resultSets.addAll( catalogExecuteResult.resultSets );
-
-            result = RemoteExecuteResult.fromExecuteResult( new ExecuteResult( resultSets ) );
-
-            // todo: Do we need to take action if the connection is set on AutoCommit?
-
-        } catch ( Exception ex ) {
-            LOGGER.debug( "[" + Thread.currentThread() + "]", ex );
-            throw new RemoteException( ex.getMessage(), ex );
-        }
-
-        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, globalCatalogSql: {}, localStoreSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, globalCatalogSql, localStoreSql, maxRowCount, maxRowsInFirstFrame, result );
-        return result;
-    }
-
-
-    @Override
-    public RemoteExecuteBatchResult prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<String> sqlCommands ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands );
-
-        final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
-
-        final RemoteExecuteBatchResult result;
-        try {
-            final ConnectionInfos connection = getOrOpenConnection( remoteStatementHandle.toStatementHandle() );
-            final StatementInfos statement = getOrCreateStatement( connection, remoteStatementHandle.toStatementHandle() );
-
-            final TransactionInfos transaction = xaMeta.getOrStartTransaction( connection, branchTransactionHandle );
-            result = RemoteExecuteBatchResult.fromExecuteBatchResult( xaMeta.prepareAndExecuteBatch( statement.getStatementHandle(), sqlCommands ) );
-
-            // todo: Do we need to take action if the connection is set on AutoCommit?
-
-        } catch ( Exception ex ) {
-            throw new RemoteException( ex.getMessage(), ex );
-        }
-
-        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, result );
-        return result;
-    }
-
-
-    @Override
     public RemoteFrame fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount ) throws RemoteException {
         try {
             final StatementInfos statement = getStatement( remoteStatementHandle.toStatementHandle() );
@@ -557,6 +560,22 @@ class LocalNode extends AbstractLocalNode {
         } catch ( Exception ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
+    }
+
+
+    @Override
+    public Void closeStatement( RemoteStatementHandle remoteStatementHandle ) throws RemoteException {
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {} )", remoteStatementHandle );
+
+        synchronized ( remoteToLocalStatementMap ) {
+            remoteToLocalStatementMap.computeIfPresent( remoteStatementHandle.toStatementHandle().toString(), ( statementHandle, statement ) -> {
+                xaMeta.closeStatement( statement.getStatementHandle() );
+                return null; // `null` == remove the mapping
+            } );
+        }
+
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {} ) = {}", remoteStatementHandle, "<VOID>" );
+        return VOID;
     }
 
 
@@ -582,6 +601,7 @@ class LocalNode extends AbstractLocalNode {
         } else {
             final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
             try {
+                LOGGER.info( "onePhaseCommit on connection {}", remoteConnectionHandle.toConnectionHandle().id );
                 this.getCatalog().onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
                 xaMeta.onePhaseCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             } catch ( XAException ex ) {
@@ -607,6 +627,7 @@ class LocalNode extends AbstractLocalNode {
         try {
             result &= this.getCatalog().prepareCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             result &= xaMeta.prepareCommit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
+            LOGGER.info( "prepareCommit on connection {} = {}", remoteConnectionHandle.toConnectionHandle().id, result );
         } catch ( XAException ex ) {
             throw new RemoteException( ex.getMessage(), ex );
         }
@@ -627,6 +648,7 @@ class LocalNode extends AbstractLocalNode {
         final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
 
         try {
+            LOGGER.info( "commit on connection {}", remoteConnectionHandle.toConnectionHandle().id );
             this.getCatalog().commit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             xaMeta.commit( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
         } catch ( XAException ex ) {
@@ -647,6 +669,7 @@ class LocalNode extends AbstractLocalNode {
         } else {
             final TransactionHandle branchTransactionHandle = remoteTransactionHandle.toTransactionHandle().generateBranchTransactionIdentifier( this.nodeId );
             try {
+                LOGGER.info( "rollback on connection {}", remoteConnectionHandle.toConnectionHandle().id );
                 this.getCatalog().rollback( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
                 xaMeta.rollback( remoteConnectionHandle.toConnectionHandle(), branchTransactionHandle );
             } catch ( NoSuchConnectionException | XAException ex ) {

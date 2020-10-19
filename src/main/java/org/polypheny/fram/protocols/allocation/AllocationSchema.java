@@ -17,13 +17,54 @@
 package org.polypheny.fram.protocols.allocation;
 
 
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.datadistribution.VirtualNode;
+import org.polypheny.fram.remote.Cluster;
 import org.polypheny.fram.remote.PhysicalNode;
 
 
 public class AllocationSchema {
 
-    private final Map<VirtualNode, PhysicalNode> allocationSchema = new HashMap<>();
+    public static PhysicalNode LOCAL_NODE;
+
+    public static final Set<PhysicalNode> ALL_NODES = new HashSet<>();
+
+    private final Map<VirtualNode, PhysicalNode> allocationSchema = new ConcurrentHashMap<>();
+
+
+    public AllocationSchema() {
+
+    }
+
+
+    public AllocationSchema( final Map<VirtualNode, PhysicalNode> allocationSchema ) {
+        this.allocationSchema.putAll( allocationSchema );
+    }
+
+
+    public PhysicalNode lookupNode( Node node ) {
+        if ( node instanceof PhysicalNode ) {
+            return (PhysicalNode) node;
+        }
+        if ( node instanceof VirtualNode ) {
+            return allocationSchema.computeIfAbsent( (VirtualNode) node, virtualNode -> {
+                PhysicalNode physicalNode = Cluster.getDefaultCluster().getRemoteNode( new org.jgroups.util.UUID( virtualNode.id.getMostSignificantBits(), virtualNode.id.getLeastSignificantBits() ) );
+                if ( physicalNode == null ) {
+                    physicalNode = Cluster.getDefaultCluster().getLocalNode();
+                }
+                return physicalNode;
+            } );
+        }
+        throw new IllegalArgumentException( "Unknown type of node" );
+    }
+
+
+    public Set<PhysicalNode> allNodes() {
+        return Collections.unmodifiableSet( new HashSet<>( allocationSchema.values() ) );
+    }
 }

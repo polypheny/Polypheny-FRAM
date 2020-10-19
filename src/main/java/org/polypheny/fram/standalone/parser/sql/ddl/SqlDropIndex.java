@@ -41,7 +41,7 @@ public class SqlDropIndex extends SqlDrop {
     private final SqlIdentifier indexName;
 
 
-    public SqlDropIndex( SqlParserPos pos, SqlIdentifier indexName, boolean ifExists ) {
+    public SqlDropIndex( SqlParserPos pos, boolean ifExists, SqlIdentifier indexName ) {
         super( OPERATOR, pos, ifExists );
         this.indexName = Objects.requireNonNull( indexName );
     }
@@ -51,11 +51,11 @@ public class SqlDropIndex extends SqlDrop {
     public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
         writer.keyword( "DROP" );
         writer.keyword( "INDEX" );
-        indexName.unparse( writer, leftPrec, rightPrec );
         if ( ifExists ) {
             writer.keyword( "IF" );
             writer.keyword( "EXISTS" );
         }
+        indexName.unparse( writer, leftPrec, rightPrec );
     }
 
 

@@ -38,7 +38,7 @@ public class ClusterUtils {
         final Map<AbstractRemoteNode, Throwable> throwables = new HashMap<>();
 
         for ( Entry<Address, Rsp<ResponseType>> responseEntry : responses.entrySet() ) {
-            final AbstractRemoteNode node = cluster.getRemoteNode( responseEntry.getKey() );
+            final RemoteNode node = cluster.getRemoteNode( responseEntry.getKey() );
             final Rsp<ResponseType> response = responseEntry.getValue();
 
             if ( response.hasException() ) {

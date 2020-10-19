@@ -56,6 +56,8 @@ import org.polypheny.fram.protocols.Protocol;
 import org.polypheny.fram.protocols.Protocols;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.standalone.connection.ConnectionAlreadyExistsException;
+import org.polypheny.fram.standalone.parser.sql.ctrl.SqlCommit;
+import org.polypheny.fram.standalone.parser.sql.ctrl.SqlRollback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -104,6 +106,8 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         this.connectionSyncDurationTimer = Metrics.timer( "meta.connectionSync", Tags.empty() );
 
         this.protocol = Protocols.valueOf( Main.configuration().hasPath( "fram.defaultProtocol" ) ? Main.configuration().getString( "fram.defaultProtocol" ).toUpperCase() : Protocols.PASS_THROUGH.name() );
+
+        LOGGER.info( "Loaded the {} protocol.", this.protocol );
     }
 
 
@@ -649,17 +653,20 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
          */
         switch ( sql.getKind() ) {
             case COMMIT:
-                return prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                return prepareAndExecuteTransactionCommit( connection, transaction, statement, (SqlCommit) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             case ROLLBACK:
-                return prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                return prepareAndExecuteTransactionRollback( connection, transaction, statement, (SqlRollback) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             case SET_OPTION:
-                return prepareAndExecuteSetOption( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+                return prepareAndExecuteSetOption( connection, transaction, statement, (SqlSetOption) sql, maxRowCount, maxRowsInFirstFrame, callback );
 
             case ALTER_SESSION:
                 throw new UnsupportedOperationException( "Not supported." );
 
+            case CREATE_TABLE:
+            case ALTER_TABLE:
+            case DROP_TABLE:
             default:
                 // intentional noop
                 break;
@@ -686,31 +693,7 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     }
 
 
-    protected ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
-        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-
-        this.commit( connection, transaction );
-
-        final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
-
-        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-        return result;
-    }
-
-
-    protected ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
-        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
-
-        this.rollback( connection, transaction );
-
-        final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
-
-        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
-        return result;
-    }
-
-
-    protected ExecuteResult prepareAndExecuteSetOption( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+    protected ExecuteResult prepareAndExecuteSetOption( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlSetOption sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
         LOGGER.trace( "prepareAndExecuteSetOption( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
 
         String optionName = sql.accept( new SqlBasicVisitor<String>() {
@@ -766,6 +749,30 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
     private synchronized void switchProtocol( Protocol newProtocol ) {
         LOGGER.info( "New Protocol {} -- Old Protocol {}", newProtocol, protocol );
         this.protocol = newProtocol;
+    }
+
+
+    protected ExecuteResult prepareAndExecuteTransactionCommit( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlCommit sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+        this.commit( connection, transaction );
+
+        final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
+
+        LOGGER.trace( "prepareAndExecuteTransactionCommit( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
+        return result;
+    }
+
+
+    protected ExecuteResult prepareAndExecuteTransactionRollback( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlRollback sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) {
+        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} )", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
+
+        this.rollback( connection, transaction );
+
+        final ExecuteResult result = new ExecuteResult( Collections.singletonList( MetaResultSet.count( statement.getStatementHandle().connectionId, statement.getStatementHandle().id, 0 ) ) );
+
+        LOGGER.trace( "prepareAndExecuteTransactionRollback( connection: {}, transaction: {}, statement: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, callback: {} ) = {}", connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback, result );
+        return result;
     }
 
 
@@ -899,6 +906,10 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
         final TransactionInfos transaction = connection.getOrStartTransaction();
         final StatementInfos statement = getStatement( statementHandle );
 
+        if ( parameterValues.isEmpty() ) {
+            return new ExecuteBatchResult( new long[0] );
+        }
+
         try {
             final ResultSetInfos resultSet = executionDurationTimer.recordCallable(
                     () -> protocol.executeBatch( connection, transaction, statement, parameterValues )
@@ -967,9 +978,12 @@ class StandaloneDistributionMeta extends AbstractDistributionMeta implements Met
 
         final StatementHandle result;
         synchronized ( openConnections ) {
-            StatementInfos si = getConnection( connectionHandle ).createStatement();
-            openStatements.put( si.getStatementHandle().toString(), si );
-            result = si.getStatementHandle();
+            StatementInfos statement = getConnection( connectionHandle ).createStatement();
+            if ( openStatements.putIfAbsent( statement.getStatementHandle().toString(), statement ) != null ) {
+                LOGGER.warn( "Statement already exists." );
+                throw Utils.wrapException( new RuntimeException( "Statement already exists." ) );
+            }
+            result = statement.getStatementHandle();
         }
 
         LOGGER.trace( "createStatement( connectionHandle: {} ) = {}", connectionHandle, result );

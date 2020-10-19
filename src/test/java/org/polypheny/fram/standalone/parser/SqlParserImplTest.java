@@ -466,9 +466,16 @@ public class SqlParserImplTest extends SqlParserTest {
 
 
     @Test
+    public void testCreateIndexIfNotExists() {
+        sql( "create index if not exists foo on bar (id1, id2)" )
+                .ok( "CREATE INDEX IF NOT EXISTS `FOO` ON `BAR` (`ID1`, `ID2`)" );
+    }
+
+
+    @Test
     public void testCreateOrReplaceIndex() {
         sql( "create or replace index foo on bar (id1, id2)" )
-                .fails( "\"OR\" \"REPLACE\" cannot be combined with \"CREATE\" \"INDEX\"." );
+                .fails( "\"OR REPLACE\" cannot be combined with \"CREATE INDEX\"." );
     }
 
 
@@ -481,8 +488,8 @@ public class SqlParserImplTest extends SqlParserTest {
 
     @Test
     public void testDropIndexIfExists() {
-        sql( "drop index foo if exists" )
-                .ok( "DROP INDEX `FOO` IF EXISTS" );
+        sql( "drop index if exists foo" )
+                .ok( "DROP INDEX IF EXISTS `FOO`" );
     }
 
 // /// MODIFICATION END
@@ -819,5 +826,4 @@ public class SqlParserImplTest extends SqlParserTest {
         final String expected = "DROP FUNCTION IF EXISTS `my udf`";
         sql( sql ).ok( expected );
     }
-
 }

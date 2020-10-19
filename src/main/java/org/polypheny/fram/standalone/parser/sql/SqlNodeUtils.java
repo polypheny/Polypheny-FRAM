@@ -279,6 +279,21 @@ public abstract class SqlNodeUtils {
                 return null;
             }
         }
+
+
+        /**
+         * Set the part of the compound identifier using the following indexes: ... . 3 (Catalog) . 2 (Schema) . 1 (Table) . 0 (Column)
+         * 0: The very last part of the name. Can be a Column, Table, or Schema name --- so it is context dependent! Is is always present.
+         * 1: The part before 0.
+         *
+         * @return The part of the compound identifier as String or null if not present.
+         */
+        public SqlIdentifier setPartOfCompoundIdentifier( final SqlIdentifier compoundIdentifier, final int partIndex, final String name ) {
+            if ( compoundIdentifier.names.size() < (1 + partIndex) ) {
+                throw new IllegalArgumentException( "Empty compound identifier." );
+            }
+            return compoundIdentifier.setName( compoundIdentifier.names.size() - (1 + partIndex), name );
+        }
     }
 
 
@@ -346,6 +361,41 @@ public abstract class SqlNodeUtils {
         }
 
 
+        public boolean whereConditionContainsOnlyEquals( final SqlSelect select ) {
+            return super.whereConditionContainsOnlyEquals( select.getWhere() );
+        }
+
+
+        public SortedMap<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlSelect select, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
+            final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
+
+            final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( select );
+            // Check if the primary key is included in the WHERE condition
+
+            for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnNamesAndIndexes.entrySet() ) {
+                // for every primary key and its index in the table
+                final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
+                if ( parameterIndex != null ) {
+                    // the primary key is present in the condition
+                    primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
+                } else {
+                    // the primary key is NOT in the condition
+                    // - later, we need to compare if this result contains all primary key columns
+                    // - if this is not the case, we need to scan the result set to gain the analytics instead of estimating it by using the input values
+                    // - this might not be as precise but for the two benchmarks (tpcc and ycsb) this should be enought
+                    //throw new UnsupportedOperationException( "Not implemented yet." );
+                }
+            }
+
+            return primaryKeyColumnsIndexesToParametersIndexes;
+        }
+
+
+        public SqlNodeList getSelectList( SqlSelect select ) {
+            return select.getSelectList();
+        }
+
+
         public SqlIdentifier getTargetTable( final SqlSelect select ) {
             return select.getFrom().accept( new SqlVisitor<SqlIdentifier>() {
                 @Override
@@ -396,34 +446,16 @@ public abstract class SqlNodeUtils {
         }
 
 
-        public boolean whereConditionContainsOnlyEquals( final SqlSelect select ) {
-            return super.whereConditionContainsOnlyEquals( select.getWhere() );
+        public SqlNode getWhere( SqlSelect select ) {
+            return select.getWhere();
         }
 
 
-        public SortedMap<Integer, Integer> getPrimaryKeyColumnsIndexesToParametersIndexesMap( final SqlSelect select, final Map<String, Integer> primaryKeyColumnNamesAndIndexes ) {
-            final SortedMap<Integer, Integer> primaryKeyColumnsIndexesToParametersIndexes = new TreeMap<>();
-
-            final Map<String, Integer> columnNamesToParameterIndexes = SqlNodeUtils.getColumnsNameToDynamicParametersIndexMap( select );
-            // Check if the primary key is included in the WHERE condition
-
-            for ( Entry<String, Integer> primaryKeyColumnNameAndIndex : primaryKeyColumnNamesAndIndexes.entrySet() ) {
-                // for every primary key and its index in the table
-                final Integer parameterIndex = columnNamesToParameterIndexes.get( primaryKeyColumnNameAndIndex.getKey() );
-                if ( parameterIndex != null ) {
-                    // the primary key is present in the condition
-                    primaryKeyColumnsIndexesToParametersIndexes.put( primaryKeyColumnNameAndIndex.getValue(), parameterIndex );
-                } else {
-                    // the primary key is NOT in the condition
-                    // - later, we need to compare if this result contains all primary key columns
-                    // - if this is not the case, we need to scan the result set to gain the analytics instead of estimating it by using the input values
-                    // - this might not be as precise but for the two benchmarks (tpcc and ycsb) this should be enought
-                    //throw new UnsupportedOperationException( "Not implemented yet." );
-                }
-            }
-
-            return primaryKeyColumnsIndexesToParametersIndexes;
+        public SqlNodeList getGroupBy( SqlSelect select ) {
+            return select.getGroup();
         }
+
+
     }
 
 
@@ -654,7 +686,8 @@ public abstract class SqlNodeUtils {
             return update.getTargetColumnList();
         }
 
-        public boolean targetColumnsContainPrimaryKeyColumn(final SqlUpdate update, final Set<String> primaryKeyColumnsNames ) {
+
+        public boolean targetColumnsContainPrimaryKeyColumn( final SqlUpdate update, final Set<String> primaryKeyColumnsNames ) {
             return this.getTargetColumns( update ).accept( new SqlBasicVisitor<Boolean>() {
                 @Override
                 public Boolean visit( SqlNodeList nodeList ) {
@@ -672,6 +705,7 @@ public abstract class SqlNodeUtils {
                 }
             } );
         }
+
 
         public boolean whereConditionContainsOnlyEquals( final SqlUpdate update ) {
             return super.whereConditionContainsOnlyEquals( update.getCondition() );

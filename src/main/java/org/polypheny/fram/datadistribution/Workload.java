@@ -41,9 +41,25 @@ public class Workload implements Serializable {
         t.scheduleAtFixedRate( new TimerTask() {
             @Override
             public void run() {
-                System.out.println( "WORKLOAD: trx_r=" + THIS_IS_A_TEST_REMOVE_ME.numberOfReadTransactions + " - trx_w=" + THIS_IS_A_TEST_REMOVE_ME.numberOfWriteTransactions );
+                synchronized ( THIS_IS_A_TEST_REMOVE_ME ) {
+                    System.out.println( "***" );
+                    System.out.println( "WORKLOAD: trx_r=" + THIS_IS_A_TEST_REMOVE_ME.numberOfReadTransactions + " - trx_w=" + THIS_IS_A_TEST_REMOVE_ME.numberOfWriteTransactions );
+                    System.out.println( "RECORD COUNTERS: size=" + THIS_IS_A_TEST_REMOVE_ME.recordCounters.size() );
+                    System.out.println( "***" );
+                }
             }
-        }, 0, TimeUnit.SECONDS.toMillis( 1 ) );
+        }, 0, TimeUnit.SECONDS.toMillis( 10 ) );
+        /*t.scheduleAtFixedRate( new TimerTask() {
+            @Override
+            public void run() {
+                synchronized ( THIS_IS_A_TEST_REMOVE_ME ) {
+                    System.out.println( "***" );
+                    System.out.println( "RECORD COUNTERS: size=" + THIS_IS_A_TEST_REMOVE_ME.recordCounters.size() );
+                    MapUtils.debugPrint( System.out, "recordCounters", THIS_IS_A_TEST_REMOVE_ME.recordCounters );
+                    System.out.println( "***" );
+                }
+            }
+        }, 0, TimeUnit.SECONDS.toMillis( 15 ) );*/
     }
 
 
@@ -54,7 +70,7 @@ public class Workload implements Serializable {
 
     private final List<Transaction> transactions = new LinkedList<>();
     private final Map<Transaction, Integer> transactionCounters = new HashMap<>();
-    private final Map<Action, Integer> actionCounters = new HashMap<>();
+    private final Map<RecordIdentifier, Integer> recordCounters = new HashMap<>();
 
 
     private int numberOfReadTransactions = 0;
@@ -71,26 +87,41 @@ public class Workload implements Serializable {
     }
 
 
-    public synchronized void addTransaction( final Transaction transaction ) {
-        if ( transaction.isEmpty() ) {
-            return;
-        }
+    public void addTransaction( final Transaction transaction ) {
+        synchronized ( this ) {
+            if ( transaction.isEmpty() ) {
+                return;
+            }
 
-        transactions.add( transaction );
-        if ( transaction.isReadOnly() ) {
-            ++numberOfReadTransactions;
-        } else {
-            ++numberOfWriteTransactions;
-        }
+            transactions.add( transaction );
+            if ( transaction.isReadOnly() ) {
+                ++numberOfReadTransactions;
+            } else {
+                ++numberOfWriteTransactions;
+            }
 
-        int transactionCounter = transactionCounters.getOrDefault( transaction, 0 );
-        ++transactionCounter;
-        transactionCounters.put( transaction, transactionCounter );
+            int transactionCounter = transactionCounters.getOrDefault( transaction, 0 );
+            ++transactionCounter;
+            transactionCounters.put( transaction, transactionCounter );
 
-        for ( final Action action : transaction ) {
-            int actionCounter = actionCounters.getOrDefault( action, 0 );
-            ++actionCounter;
-            actionCounters.put( action, actionCounter );
+            for ( final Action action : transaction ) {
+                switch ( action.operation ) {
+                    case INSERT:
+                        recordCounters.put( action.record, 0 );
+                        break;
+
+                    case SELECT:
+                    case UPDATE:
+                        int actionCounter = recordCounters.getOrDefault( action.record, 0 );
+                        ++actionCounter;
+                        recordCounters.put( action.record, actionCounter );
+                        break;
+
+                    case DELETE:
+                        recordCounters.remove( action.record );
+                        break;
+                }
+            }
         }
     }
 
@@ -103,7 +134,7 @@ public class Workload implements Serializable {
                 ", duration=" + duration +
                 ", transactions=" + transactions +
                 ", transactionCounters=" + transactionCounters +
-                ", actionCounters=" + actionCounters +
+                ", recordCounters=" + recordCounters +
                 ", numberOfReadTransactions=" + numberOfReadTransactions +
                 ", numberOfWriteTransactions=" + numberOfWriteTransactions +
                 '}';

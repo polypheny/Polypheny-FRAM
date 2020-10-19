@@ -20,8 +20,6 @@ package org.polypheny.fram.standalone;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,10 +38,10 @@ public class Utils {
     public static final UUID EMPTY_UUID = new UUID( 0L, 0L );
     public static final UUID USER_PA_UUID = new UUID( 0L, 1L );
     public static final UUID USER_ANONYMOUS_UUID = new UUID( -1L, -1L );
-    public static final Void VOID;
+    public static final Void VOID = null;
 
 
-    static {
+/*    static {
         Constructor<Void> voidClassConstructor;
         try {
             voidClassConstructor = Void.class.getDeclaredConstructor();
@@ -53,7 +51,7 @@ public class Utils {
         } catch ( NoSuchMethodException | IllegalAccessException | InstantiationException | InvocationTargetException e ) {
             throw new InternalError( "Problems with instantiating an object of class java.lang.Void.", e );
         }
-    }
+    }*/
 
 
     private Utils() {

@@ -33,6 +33,8 @@ import io.micrometer.prometheus.PrometheusMeterRegistry;
 import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import javax.inject.Inject;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -226,8 +228,27 @@ public class Main {
         LOGGER.info( "Starting the Polypheny-FRAM server at port {}", standalonePort );
         polyphenyFramServer.start();
 
+        final Thread main = Thread.currentThread();
+        Runtime.getRuntime().addShutdownHook( ((Supplier<Thread>) () -> {
+            final Thread terminator = new Thread( () -> {
+                try {
+                    Thread.sleep( TimeUnit.SECONDS.toMillis( 10 ) );
+                    main.interrupt();
+                } catch ( InterruptedException e ) {
+                    // ignore
+                }
+            }, "Termination" );
+            terminator.setDaemon( true );
+            return terminator;
+        }).get() );
+
         // Wait for termination
         System.out.println( "*** STARTUP FINISHED ***" ); //NOSONAR squid:S106 - Justification: We *always* want to have this printed, regardless of the logger configuration.
-        polyphenyFramServer.join();
+        try {
+            polyphenyFramServer.join();
+        } catch ( InterruptedException ex ) {
+            System.out.println( "*** TERMINATING ***" ); //NOSONAR squid:S106 - Justification: We *always* want to have this printed, regardless of the logger configuration.
+            Runtime.getRuntime().exit( 9999 );
+        }
     }
 }

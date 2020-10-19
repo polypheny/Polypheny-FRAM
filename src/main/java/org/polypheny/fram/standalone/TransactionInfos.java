@@ -23,7 +23,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import javax.transaction.xa.Xid;
-import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.PhysicalNode;
 import org.polypheny.fram.standalone.transaction.TransactionHandle;
 
 
@@ -35,7 +35,7 @@ public class TransactionInfos {
     private final ConnectionInfos connection;
     private final TransactionHandle transactionHandle;
 
-    private final Set<AbstractRemoteNode> accessedNodes = new HashSet<>();
+    private final Set<PhysicalNode> accessedNodes = new HashSet<>();
 
     private State state = State.STARTED;
 
@@ -62,7 +62,9 @@ public class TransactionInfos {
 
 
     public boolean requires2pc() {
-        return this.accessedNodes.size() > 1;
+        synchronized ( this.accessedNodes ) {
+            return this.accessedNodes.size() > 1;
+        }
     }
 
 
@@ -91,18 +93,22 @@ public class TransactionInfos {
     }
 
 
-    void addAccessedNode( final AbstractRemoteNode node ) {
+    void addAccessedNode( final PhysicalNode node ) {
         this.addAccessedNodes( Collections.singleton( node ) );
     }
 
 
-    void addAccessedNodes( final Collection<AbstractRemoteNode> nodes ) {
-        this.accessedNodes.addAll( nodes );
+    void addAccessedNodes( final Collection<PhysicalNode> nodes ) {
+        synchronized ( this.accessedNodes ) {
+            this.accessedNodes.addAll( nodes );
+        }
     }
 
 
-    public Collection<AbstractRemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( this.accessedNodes );
+    public Set<PhysicalNode> getAccessedNodes() {
+        synchronized ( this.accessedNodes ) {
+            return Collections.unmodifiableSet( new HashSet<>( this.accessedNodes ) );
+        }
     }
 
 

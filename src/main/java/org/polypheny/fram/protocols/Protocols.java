@@ -43,6 +43,7 @@ import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.Main;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
 
@@ -103,6 +104,12 @@ public enum Protocols implements Protocol {
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteDataDefinition( connection, transaction, statement, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, callback );
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         return delegate.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
@@ -127,13 +134,13 @@ public enum Protocols implements Protocol {
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         return delegate.prepareDataManipulation( connection, statement, sql, maxRowCount );
     }
 
 
     @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         return delegate.prepareDataQuery( connection, statement, sql, maxRowCount );
     }
 

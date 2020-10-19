@@ -22,13 +22,14 @@ import java.io.Serializable;
 import lombok.EqualsAndHashCode;
 import org.apache.calcite.avatica.Meta.StatementHandle;
 import org.apache.calcite.avatica.proto.Common;
+import org.polypheny.fram.standalone.Meta.Statement;
 
 
 /**
  *
  */
 @EqualsAndHashCode(doNotUseGetters = true, onlyExplicitlyIncluded = true)
-public class RemoteStatementHandle implements Serializable {
+public class RemoteStatementHandle implements Statement, Serializable {
 
     private static final long serialVersionUID = 1L;
 

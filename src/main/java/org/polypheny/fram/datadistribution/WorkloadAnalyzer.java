@@ -22,15 +22,16 @@ import java.rmi.RemoteException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.TimeZone;
 import java.util.TreeSet;
 import org.apache.calcite.avatica.AvaticaResultSet;
 import org.apache.calcite.avatica.AvaticaResultSetMetaData;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.CursorFactory;
+import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.MetaResultSet;
 import org.apache.calcite.avatica.Meta.Pat;
@@ -52,17 +53,15 @@ import org.apache.calcite.sql.SqlUpdate;
 import org.polypheny.fram.datadistribution.Transaction.Operation;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol;
-import org.polypheny.fram.remote.AbstractRemoteNode;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.standalone.CatalogUtils;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.Main;
 import org.polypheny.fram.standalone.ResultSetInfos;
-import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
 import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 import org.polypheny.fram.standalone.StatementInfos;
 import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
+import org.polypheny.fram.standalone.Utils;
 import org.polypheny.fram.standalone.parser.sql.SqlNodeUtils;
 
 
@@ -74,6 +73,7 @@ public class WorkloadAnalyzer implements Protocol {
     private final boolean rpkDML;
     private final boolean rpkDQL;
     private final boolean rpkNoPrimaryKey;
+    private final boolean analyzeBatches;
 
     private AbstractProtocol delegate;
 
@@ -84,6 +84,7 @@ public class WorkloadAnalyzer implements Protocol {
         rpkDML = configuration.getString( "standalone.datastore.getGeneratedKeys.return_primary_key_for_dml" ).equalsIgnoreCase( GET_GENERATED_KEYS_CONFIGURATION_OPTION_RETURN_PRIMARY_KEY );
         rpkDQL = configuration.getString( "standalone.datastore.getGeneratedKeys.return_primary_key_for_dql" ).equalsIgnoreCase( GET_GENERATED_KEYS_CONFIGURATION_OPTION_RETURN_PRIMARY_KEY );
         rpkNoPrimaryKey = configuration.getString( "standalone.datastore.getGeneratedKeys.tables_without_primary_key" ).equalsIgnoreCase( GET_GENERATED_KEYS_CONFIGURATION_OPTION_RETURN_PRIMARY_KEY );
+        analyzeBatches = configuration.getBoolean( "fram.analyzeBatches" );
 
         this.delegate = protocol;
     }
@@ -102,6 +103,12 @@ public class WorkloadAnalyzer implements Protocol {
 
 
     @Override
+    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return delegate.prepareAndExecuteDataDefinition( connection, transaction, statement, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, callback );
+    }
+
+
+    @Override
     public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
 
         final SqlIdentifier targetTable;
@@ -111,12 +118,12 @@ public class WorkloadAnalyzer implements Protocol {
                 targetTable = SqlNodeUtils.INSERT_UTILS.getTargetTable( (SqlInsert) sql );
                 break;
 
-            case DELETE:
-                targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( (SqlDelete) sql );
-                break;
-
             case UPDATE:
                 targetTable = SqlNodeUtils.UPDATE_UTILS.getTargetTable( (SqlUpdate) sql );
+                break;
+
+            case DELETE:
+                targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( (SqlDelete) sql );
                 break;
 
             case MERGE:
@@ -135,7 +142,7 @@ public class WorkloadAnalyzer implements Protocol {
             executeResult = delegate.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } else {
             // we need to check if the table has a primary key
-            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
+            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnsNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
             final boolean tableHasPrimaryKeys = !primaryKeyColumnNamesAndIndexes.isEmpty();
 
             if ( rpkDML && tableHasPrimaryKeys ) {
@@ -174,54 +181,55 @@ public class WorkloadAnalyzer implements Protocol {
             throw new IllegalStateException( "Unknown ResultSetInfos implementation" );
         }
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> origins = ((QueryResultSet) executeResult).getOrigins();
-        final Transaction wlTrx = Transaction.getTransaction( transaction.getTransactionId() );
+        final ExecuteResult generatedKeysResult = ((ResultSetInfos) executeResult).getGeneratedKeys();
+        if ( generatedKeysResult == null ) {
+            throw new IllegalStateException( "generatedKeysResult == null" );
+        }
 
-        for ( Entry<AbstractRemoteNode, RemoteExecuteResult> origin : origins.entrySet() ) {
-            final AbstractRemoteNode src = origin.getKey();
-            final List<MetaResultSet> resultSets = origin.getValue().toExecuteResult().resultSets;
+        final List<MetaResultSet> generatedKeysMetaResultSets = generatedKeysResult.resultSets;
+        if ( generatedKeysMetaResultSets.isEmpty() ) {
+            throw new IllegalStateException( "List of generatedKeysResult.resultSets is empty!" );
+        }
 
-            switch ( resultSets.size() ) {
-                case 0:
-                    throw new IllegalStateException( "List of resultSets returned by " + src + " is empty!" );
+        try {
 
-                case 1:
-                    throw new IllegalStateException( "List of resultSets returned by " + src + " contains only one result set! The retrieval of the accessed keys must have failed!" );
+            final MetaResultSet generatedKeys = generatedKeysMetaResultSets.get( 0 );
+            final ResultSet generateKeysResultSet = new AvaticaResultSet( null, null, generatedKeys.signature, new AvaticaResultSetMetaData( null, null, generatedKeys.signature ), TimeZone.getDefault(), generatedKeys.firstFrame )
+                    .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, generatedKeys.firstFrame.rows ), generatedKeys.signature.columns );
 
-                case 2:
-                    break; // intentional
+            final int numberOfColumns = generateKeysResultSet.getMetaData().getColumnCount();
 
-                default:
-                    throw new UnsupportedOperationException( "List of resultSets returned by " + src + " contains more than two result sets! The return of multiple data(?) results is currently not supported!" );
-            }
+            int processedRows = 0;
+            for ( ; generateKeysResultSet.next(); ++processedRows ) {
+                final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
 
-            final long updateCount = resultSets.get( 0 ).updateCount;
-            final MetaResultSet accessedKeys = resultSets.get( 1 );
-
-            try {
-                final ResultSet apks = new AvaticaResultSet( null, null, accessedKeys.signature, new AvaticaResultSetMetaData( null, null, accessedKeys.signature ), TimeZone.getDefault(), accessedKeys.firstFrame )
-                        .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, accessedKeys.firstFrame.rows ), accessedKeys.signature.columns );
-
-                final int numberOfColumns = apks.getMetaData().getColumnCount();
-
-                int processedRows = 0;
-                for ( ; apks.next(); ++processedRows ) {
-                    final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
-
-                    for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
-                        primaryKeyValues[columnIndex] = (Serializable) apks.getObject( columnIndex + 1 );
-                    }
-
-                    // add the requested record to the transaction
-                    wlTrx.addAction( Operation.WRITE, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
+                    primaryKeyValues[columnIndex] = (Serializable) generateKeysResultSet.getObject( columnIndex + 1 );
                 }
 
-                if ( processedRows != updateCount ) {
-                    throw new AssertionError( "Processed rows (" + processedRows + ") != update count (" + updateCount + ")" );
+                // add the requested record to the transaction
+                switch ( sql.getKind() ) {
+                    case INSERT:
+                        Transaction.getTransaction( ((TransactionInfos) transaction).getTransactionId() )
+                                .addAction( Operation.INSERT, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                        break;
+
+                    case UPDATE:
+                        Transaction.getTransaction( ((TransactionInfos) transaction).getTransactionId() )
+                                .addAction( Operation.UPDATE, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                        break;
+
+                    case DELETE:
+                        Transaction.getTransaction( ((TransactionInfos) transaction).getTransactionId() )
+                                .addAction( Operation.DELETE, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                        break;
                 }
-            } catch ( SQLException ex ) {
-                throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
             }
+
+            // todo: check processed rows against (the sum of) the update count(s)
+
+        } catch ( SQLException ex ) {
+            throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
         }
 
         return executeResult;
@@ -260,7 +268,7 @@ public class WorkloadAnalyzer implements Protocol {
             executeResult = delegate.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, callback );
         } else {
             // we need to check if the table has a primary key
-            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
+            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnsNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
             final boolean tableHasPrimaryKeys = !primaryKeyColumnNamesAndIndexes.isEmpty();
 
             if ( rpkDQL && tableHasPrimaryKeys ) {
@@ -299,49 +307,45 @@ public class WorkloadAnalyzer implements Protocol {
             throw new IllegalStateException( "Unknown ResultSetInfos implementation" );
         }
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> origins = ((QueryResultSet) executeResult).getOrigins();
-        final Transaction wlTrx = Transaction.getTransaction( transaction.getTransactionId() );
+        final ExecuteResult generatedKeysResult = ((ResultSetInfos) executeResult).getGeneratedKeys();
+        if ( generatedKeysResult == null ) {
+            throw new IllegalStateException( "generatedKeysResult == null" );
+        }
 
-        for ( Entry<AbstractRemoteNode, RemoteExecuteResult> origin : origins.entrySet() ) {
-            final AbstractRemoteNode src = origin.getKey();
-            final List<MetaResultSet> resultSets = origin.getValue().toExecuteResult().resultSets;
+        final List<MetaResultSet> generatedKeysMetaResultSets = generatedKeysResult.resultSets;
+        if ( generatedKeysMetaResultSets.isEmpty() ) {
+            throw new IllegalStateException( "List of generatedKeysResult.resultSets is empty!" );
+        }
 
-            switch ( resultSets.size() ) {
-                case 0:
-                    throw new IllegalStateException( "List of resultSets returned by " + src + " is empty!" );
+        try {
 
-                case 1:
-                    throw new IllegalStateException( "List of resultSets returned by " + src + " contains only one result set! The retrieval of the accessed keys must have failed!" );
+            final MetaResultSet generatedKeys = generatedKeysMetaResultSets.get( 0 );
+            final ResultSet generateKeysResultSet = new AvaticaResultSet( null, null, generatedKeys.signature, new AvaticaResultSetMetaData( null, null, generatedKeys.signature ), TimeZone.getDefault(), generatedKeys.firstFrame )
+                    .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, generatedKeys.firstFrame.rows ), generatedKeys.signature.columns );
 
-                case 2:
-                    break; // intentional
+            final int numberOfColumns = generateKeysResultSet.getMetaData().getColumnCount();
 
-                default:
-                    throw new UnsupportedOperationException( "List of resultSets returned by " + src + " contains more than two result sets! The return of multiple data(?) results is currently not supported!" );
-            }
+            int processedRows = 0;
+            for ( ; generateKeysResultSet.next(); ++processedRows ) {
+                final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
 
-            final MetaResultSet accessedKeys = resultSets.get( 1 );
-
-            try {
-                final ResultSet apks = new AvaticaResultSet( null, null, accessedKeys.signature, new AvaticaResultSetMetaData( null, null, accessedKeys.signature ), TimeZone.getDefault(), accessedKeys.firstFrame )
-                        .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, accessedKeys.firstFrame.rows ), accessedKeys.signature.columns );
-
-                final int numberOfColumns = apks.getMetaData().getColumnCount();
-
-                int processedRows = 0;
-                for ( ; apks.next(); ++processedRows ) {
-                    final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
-
-                    for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
-                        primaryKeyValues[columnIndex] = (Serializable) apks.getObject( columnIndex + 1 );
-                    }
-
-                    // add the requested record to the transaction
-                    wlTrx.addAction( Operation.READ, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
+                    primaryKeyValues[columnIndex] = (Serializable) generateKeysResultSet.getObject( columnIndex + 1 );
                 }
-            } catch ( SQLException ex ) {
-                throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
+
+                // add the requested record to the transaction
+                switch ( sql.getKind() ) {
+                    case SELECT:
+                        Transaction.getTransaction( ((TransactionInfos) transaction).getTransactionId() )
+                                .addAction( Operation.SELECT, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                        break;
+                }
             }
+
+            // todo: check processed rows against (the sum of) the update count(s)
+
+        } catch ( SQLException ex ) {
+            throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
         }
 
         return executeResult;
@@ -371,7 +375,7 @@ public class WorkloadAnalyzer implements Protocol {
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
 
         final SqlIdentifier targetTable;
         switch ( sql.getKind() ) {
@@ -380,12 +384,12 @@ public class WorkloadAnalyzer implements Protocol {
                 targetTable = SqlNodeUtils.INSERT_UTILS.getTargetTable( (SqlInsert) sql );
                 break;
 
-            case DELETE:
-                targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( (SqlDelete) sql );
-                break;
-
             case UPDATE:
                 targetTable = SqlNodeUtils.UPDATE_UTILS.getTargetTable( (SqlUpdate) sql );
+                break;
+
+            case DELETE:
+                targetTable = SqlNodeUtils.DELETE_UTILS.getTargetTable( (SqlDelete) sql );
                 break;
 
             case MERGE:
@@ -404,7 +408,7 @@ public class WorkloadAnalyzer implements Protocol {
             preparedStatement = (PreparedStatementInfos) delegate.prepareDataManipulation( connection, statement, sql, maxRowCount );
         } else {
             // we need to check if the table has a primary key
-            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
+            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnsNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
             final boolean tableHasPrimaryKeys = !primaryKeyColumnNamesAndIndexes.isEmpty();
 
             if ( rpkDML && tableHasPrimaryKeys ) {
@@ -441,64 +445,60 @@ public class WorkloadAnalyzer implements Protocol {
 
         preparedStatement.setWorkloadAnalysisFunction( ( _connection, _transaction, _statement, _values, _result ) -> {
 
-            if ( _result instanceof QueryResultSet ) {
-                final Map<AbstractRemoteNode, RemoteExecuteResult> origins = ((QueryResultSet) _result).getOrigins();
-                final Transaction wlTrx = Transaction.getTransaction( _transaction.getTransactionId() );
-
-                for ( Entry<AbstractRemoteNode, RemoteExecuteResult> origin : origins.entrySet() ) {
-                    final AbstractRemoteNode src = origin.getKey();
-                    final List<MetaResultSet> resultSets = origin.getValue().toExecuteResult().resultSets;
-
-                    switch ( resultSets.size() ) {
-                        case 0:
-                            throw new IllegalStateException( "List of resultSets returned by " + src + " is empty!" );
-
-                        case 1:
-                            throw new IllegalStateException( "List of resultSets returned by " + src + " contains only one result set! The retrieval of the accessed keys must have failed!" );
-
-                        case 2:
-                            break; // intentional
-
-                        default:
-                            throw new UnsupportedOperationException( "List of resultSets returned by " + src + " contains more than two result sets! The return of multiple data(?) results is currently not supported!" );
-                    }
-
-                    final long updateCount = resultSets.get( 0 ).updateCount;
-                    final MetaResultSet accessedKeys = resultSets.get( 1 );
-
-                    try {
-                        final ResultSet apks = new AvaticaResultSet( null, null, accessedKeys.signature, new AvaticaResultSetMetaData( null, null, accessedKeys.signature ), TimeZone.getDefault(), accessedKeys.firstFrame )
-                                .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, accessedKeys.firstFrame.rows ), accessedKeys.signature.columns );
-
-                        final int numberOfColumns = apks.getMetaData().getColumnCount();
-
-                        int processedRows = 0;
-                        for ( ; apks.next(); ++processedRows ) {
-                            final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
-
-                            for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
-                                primaryKeyValues[columnIndex] = (Serializable) apks.getObject( columnIndex + 1 );
-                            }
-
-                            // add the requested record to the transaction
-                            wlTrx.addAction( Operation.WRITE, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
-                        }
-
-                        if ( processedRows != updateCount ) {
-                            throw new AssertionError( "Processed rows (" + processedRows + ") != update count (" + updateCount + ")" );
-                        }
-                    } catch ( SQLException ex ) {
-                        throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
-                    }
-                }
-
-            } else if ( _result instanceof BatchResultSetInfos ) {
-                throw new UnsupportedOperationException( "Not implemented yet." );
-            } else {
-                throw new IllegalStateException( "Unknown ResultSetInfos implementation" );
+            final ExecuteResult generatedKeysResult = ((ResultSetInfos) _result).getGeneratedKeys();
+            if ( generatedKeysResult == null ) {
+                throw new IllegalStateException( "generatedKeysResult == null" );
             }
 
-            return /*Void*/ null;
+            final List<MetaResultSet> generatedKeysMetaResultSets = generatedKeysResult.resultSets;
+            if ( generatedKeysMetaResultSets.isEmpty() ) {
+                throw new IllegalStateException( "List of generatedKeysResult.resultSets is empty!" );
+            }
+
+            for ( MetaResultSet generatedKeys : generatedKeysMetaResultSets ) {
+                for ( Object rawRow : generatedKeys.firstFrame.rows ) {
+                    final Serializable[] keyValues;
+
+                    if ( rawRow instanceof Object[] ) {
+                        final Object[] arrayRow = (Object[]) rawRow;
+                        keyValues = new Serializable[arrayRow.length];
+                        for ( int columnIndex = 0; columnIndex < keyValues.length; ++columnIndex ) {
+                            keyValues[columnIndex] = (Serializable) arrayRow[columnIndex];
+                        }
+                    } else if ( rawRow instanceof List ) {
+                        final List<Object> listRow = (List<Object>) rawRow;
+                        keyValues = new Serializable[listRow.size()];
+                        Iterator<Object> listRowIterator = listRow.iterator();
+                        for ( int columnIndex = 0; columnIndex < keyValues.length && listRowIterator.hasNext(); ++columnIndex ) {
+                            keyValues[columnIndex] = (Serializable) listRowIterator.next();
+                        }
+                    } else {
+                        throw new UnsupportedOperationException( "Not implemented yet." );
+                    }
+
+                    // add the requested record to the transaction
+                    switch ( sql.getKind() ) {
+                        case INSERT:
+                            Transaction.getTransaction( ((TransactionInfos) _transaction).getTransactionId() )
+                                    .addAction( Operation.INSERT, new RecordIdentifier( catalogName, schemaName, tableName, keyValues ) );
+                            break;
+
+                        case UPDATE:
+                            Transaction.getTransaction( ((TransactionInfos) _transaction).getTransactionId() )
+                                    .addAction( Operation.UPDATE, new RecordIdentifier( catalogName, schemaName, tableName, keyValues ) );
+                            break;
+
+                        case DELETE:
+                            Transaction.getTransaction( ((TransactionInfos) _transaction).getTransactionId() )
+                                    .addAction( Operation.DELETE, new RecordIdentifier( catalogName, schemaName, tableName, keyValues ) );
+                            break;
+                    }
+                }
+            }
+
+            // todo: check processed rows against (the sum of) the update count(s)
+
+            return Utils.VOID;
         } );
 
         return preparedStatement;
@@ -506,7 +506,7 @@ public class WorkloadAnalyzer implements Protocol {
 
 
     @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
 
         // more than one table and especially the required join is currently not supported!
         final SqlIdentifier targetTable;
@@ -537,7 +537,7 @@ public class WorkloadAnalyzer implements Protocol {
             preparedStatement = (PreparedStatementInfos) delegate.prepareDataQuery( connection, statement, sql, maxRowCount );
         } else {
             // we need to check if the table has a primary key
-            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
+            final Map<String, Integer> primaryKeyColumnNamesAndIndexes = Collections.unmodifiableMap( CatalogUtils.lookupPrimaryKeyColumnsNamesAndIndexes( connection, catalogName, schemaName, tableName ) );
             final boolean tableHasPrimaryKeys = !primaryKeyColumnNamesAndIndexes.isEmpty();
 
             if ( rpkDQL && tableHasPrimaryKeys ) {
@@ -574,59 +574,48 @@ public class WorkloadAnalyzer implements Protocol {
 
         preparedStatement.setWorkloadAnalysisFunction( ( _connection, _transaction, _statement, _values, _result ) -> {
 
-            if ( _result instanceof QueryResultSet ) {
-                final Map<AbstractRemoteNode, RemoteExecuteResult> origins = ((QueryResultSet) _result).getOrigins();
-                final Transaction wlTrx = Transaction.getTransaction( _transaction.getTransactionId() );
+            final ExecuteResult generatedKeysResult = ((ResultSetInfos) _result).getGeneratedKeys();
+            if ( generatedKeysResult == null ) {
+                throw new IllegalStateException( "generatedKeysResult == null" );
+            }
 
-                for ( Entry<AbstractRemoteNode, RemoteExecuteResult> origin : origins.entrySet() ) {
-                    final AbstractRemoteNode src = origin.getKey();
-                    final List<MetaResultSet> resultSets = origin.getValue().toExecuteResult().resultSets;
+            final List<MetaResultSet> generatedKeysMetaResultSets = generatedKeysResult.resultSets;
+            if ( generatedKeysMetaResultSets.isEmpty() ) {
+                throw new IllegalStateException( "List of generatedKeysResult.resultSets is empty!" );
+            }
 
-                    switch ( resultSets.size() ) {
-                        case 0:
-                            throw new IllegalStateException( "List of resultSets returned by " + src + " is empty!" );
+            try {
 
-                        case 1:
-                            throw new IllegalStateException( "List of resultSets returned by " + src + " contains only one result set! The retrieval of the accessed keys must have failed!" );
+                final MetaResultSet generatedKeys = generatedKeysMetaResultSets.get( 0 );
+                final ResultSet generateKeysResultSet = new AvaticaResultSet( null, null, generatedKeys.signature, new AvaticaResultSetMetaData( null, null, generatedKeys.signature ), TimeZone.getDefault(), generatedKeys.firstFrame )
+                        .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, generatedKeys.firstFrame.rows ), generatedKeys.signature.columns );
 
-                        case 2:
-                            break; // intentional
+                final int numberOfColumns = generateKeysResultSet.getMetaData().getColumnCount();
 
-                        default:
-                            throw new UnsupportedOperationException( "List of resultSets returned by " + src + " contains more than two result sets! The return of multiple data(?) results is currently not supported!" );
+                int processedRows = 0;
+                for ( ; generateKeysResultSet.next(); ++processedRows ) {
+                    final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
+
+                    for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
+                        primaryKeyValues[columnIndex] = (Serializable) generateKeysResultSet.getObject( columnIndex + 1 );
                     }
 
-                    final MetaResultSet accessedKeys = resultSets.get( 1 );
-
-                    try {
-                        final ResultSet apks = new AvaticaResultSet( null, null, accessedKeys.signature, new AvaticaResultSetMetaData( null, null, accessedKeys.signature ), TimeZone.getDefault(), accessedKeys.firstFrame )
-                                .execute2( MetaImpl.createCursor( CursorFactory.ARRAY, accessedKeys.firstFrame.rows ), accessedKeys.signature.columns );
-
-                        final int numberOfColumns = apks.getMetaData().getColumnCount();
-
-                        int processedRows = 0;
-                        for ( ; apks.next(); ++processedRows ) {
-                            final Serializable[] primaryKeyValues = new Serializable[numberOfColumns];
-
-                            for ( int columnIndex = 0; columnIndex < numberOfColumns; ++columnIndex ) {
-                                primaryKeyValues[columnIndex] = (Serializable) apks.getObject( columnIndex + 1 );
-                            }
-
-                            // add the requested record to the transaction
-                            wlTrx.addAction( Operation.READ, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
-                        }
-                    } catch ( SQLException ex ) {
-                        throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
+                    // add the requested record to the transaction
+                    switch ( sql.getKind() ) {
+                        case SELECT:
+                            Transaction.getTransaction( ((TransactionInfos) _transaction).getTransactionId() )
+                                    .addAction( Operation.SELECT, new RecordIdentifier( catalogName, schemaName, tableName, primaryKeyValues ) );
+                            break;
                     }
                 }
 
-            } else if ( _result instanceof BatchResultSetInfos ) {
-                throw new UnsupportedOperationException( "SELECTs are not supported in batch mode." );
-            } else {
-                throw new IllegalStateException( "Unknown ResultSetInfos implementation" );
+                // todo: check processed rows against (the sum of) the update count(s)
+
+            } catch ( SQLException ex ) {
+                throw new RuntimeException( "Internal Exception while converting the returned MetaResultSet into a JDBC ResultSet.", ex );
             }
 
-            return /*Void*/ null;
+            return Utils.VOID;
         } );
 
         return preparedStatement;
@@ -654,7 +643,20 @@ public class WorkloadAnalyzer implements Protocol {
 
     @Override
     public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return delegate.executeBatch( connection, transaction, statement, parameterValues );
+
+        if ( !(statement instanceof PreparedStatementInfos) ) {
+            // The given statement is not a prepared statement.
+            throw new NoSuchStatementException( statement.getStatementHandle() );
+        }
+
+        final PreparedStatementInfos preparedStatement = (PreparedStatementInfos) statement;
+
+        final ResultSetInfos resultSet = delegate.executeBatch( connection, transaction, preparedStatement, parameterValues );
+
+        // execute the workload analysis function which was created during the prepare call
+        preparedStatement.getWorkloadAnalysisFunction().apply( connection, transaction, preparedStatement, parameterValues, resultSet );
+
+        return resultSet;
     }
 
 

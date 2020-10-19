@@ -24,7 +24,7 @@ import org.polypheny.fram.Node;
 
 
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-public abstract class PhysicalNode implements Node, Serializable {
+public abstract class PhysicalNode implements Node, RemoteMeta, Serializable {
 
     public PhysicalNode() {
         super();

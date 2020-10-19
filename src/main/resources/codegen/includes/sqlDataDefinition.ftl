@@ -432,8 +432,7 @@ SqlDrop SqlDropFunction(Span s, boolean replace) :
     final SqlIdentifier id;
 }
 {
-    <FUNCTION> ifExists = IfExistsOpt()
-    id = CompoundIdentifier() {
+    <FUNCTION> ifExists = IfExistsOpt() id = CompoundIdentifier() {
         return SqlDdlNodes.dropFunction(s.end(this), ifExists, id);
     }
 }
@@ -444,15 +443,16 @@ SqlDrop SqlDropFunction(Span s, boolean replace) :
 
 SqlCreate SqlCreateIndex(Span s, boolean replace) :
 {
+    if (replace) throw new ParseException("\"OR REPLACE\" cannot be combined with \"CREATE INDEX\".");
+    final boolean ifNotExists;
     final SqlIdentifier id;
     final SqlIdentifier table;
     final SqlNodeList columns;
 }
 {
-    <INDEX> { if (replace) throw new ParseException("\"OR\" \"REPLACE\" cannot be combined with \"CREATE\" \"INDEX\"."); }
-    id = SimpleIdentifier() <ON> table = CompoundIdentifier() columns = ParenthesizedSimpleIdentifierList()
+    <INDEX> ifNotExists = IfNotExistsOpt() id = SimpleIdentifier() <ON> table = CompoundIdentifier() columns = ParenthesizedSimpleIdentifierList()
     {
-        return SqlDdlIndexNodes.createIndex(s.end(this), id, table, columns);
+        return SqlDdlIndexNodes.createIndex(s.end(this), replace, ifNotExists, id, table, columns);
     }
 }
 
@@ -462,8 +462,7 @@ SqlDrop SqlDropIndex(Span s, boolean replace) :
     final SqlIdentifier id;
 }
 {
-    <INDEX> { if (replace) throw new ParseException("\"OR\" \"REPLACE\" cannot be combined with \"DROP\" \"INDEX\"."); }
-    id = CompoundIdentifier() ifExists = IfExistsOpt() {
-        return SqlDdlIndexNodes.dropIndex(s.end(this), id, ifExists);
+    <INDEX> ifExists = IfExistsOpt() id = CompoundIdentifier() {
+        return SqlDdlIndexNodes.dropIndex(s.end(this), ifExists, id);
     }
 }

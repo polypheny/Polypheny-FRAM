@@ -18,88 +18,179 @@ package org.polypheny.fram.protocols.allocation;
 
 
 import java.rmi.RemoteException;
-import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
-import org.apache.calcite.avatica.Meta.PrepareCallback;
+import java.util.Set;
 import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.Node;
 import org.polypheny.fram.protocols.AbstractProtocol;
 import org.polypheny.fram.protocols.Protocol.PlacementProtocol;
-import org.polypheny.fram.remote.AbstractRemoteNode;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.PhysicalNode;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
+import org.polypheny.fram.standalone.Utils;
+import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
 public class AllocationModule extends AbstractProtocol implements PlacementProtocol {
 
+    public final AllocationSchema currentSchema = new AllocationSchema();
+
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, ResultSetInfos> results = new HashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                final PhysicalNode assignedNode = this.currentSchema.lookupNode( executionTarget );
+                try {
+                    final Map<PhysicalNode, ResultSetInfos> executeResult = down.prepareAndExecuteDataDefinition( connection, transaction, statement, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, Collections.singleton( assignedNode ) );
+                    results.put( executionTarget, executeResult.get( assignedNode ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
+
+        return results;
     }
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, ResultSetInfos> results = new HashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                final PhysicalNode assignedNode = this.currentSchema.lookupNode( executionTarget );
+                try {
+                    final Map<PhysicalNode, ResultSetInfos> executeResult = down.prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, Collections.singleton( assignedNode ) );
+                    results.put( executionTarget, executeResult.get( assignedNode ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
+
+        return results;
     }
 
 
     @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, ResultSetInfos> results = new HashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                final PhysicalNode assignedNode = this.currentSchema.lookupNode( executionTarget );
+                try {
+                    final Map<PhysicalNode, ResultSetInfos> executeResult = down.prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, Collections.singleton( assignedNode ) );
+                    results.put( executionTarget, executeResult.get( assignedNode ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
+
+        return results;
     }
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
+
+        /*
+         * Semantics: execute the given SQL on the given Fragments/Replicas
+         */
+
+        /*
+         * executionTargets: Type: e.g. Fragment or Replica or PhysicalNode
+         * Can be a single Fragment or multiple
+         */
+
+        final Map<NodeType, PreparedStatementInfos> preparedStatements = new HashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                final PhysicalNode assignedNode = this.currentSchema.lookupNode( executionTarget );
+                try {
+                    final Map<PhysicalNode, PreparedStatementInfos> prepareResult = down.prepareDataManipulation( connection, statement, sql, maxRowCount, Collections.singleton( assignedNode ) );
+                    preparedStatements.put( executionTarget, prepareResult.get( assignedNode ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
+
+        return preparedStatements;
     }
 
 
     @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
-    }
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
 
+        /*
+         * Semantics: execute the given SQL on the given Fragments/Replicas
+         */
 
-    @Override
-    public ResultSetInfos prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
+        /*
+         * executionTargets: Type: e.g. Fragment or Replica or PhysicalNode
+         * Can be a single Fragment or multiple
+         */
 
+        final Map<NodeType, PreparedStatementInfos> preparedStatements = new HashMap<>();
 
-    @Override
-    public ResultSetInfos prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                final PhysicalNode assignedNode = this.currentSchema.lookupNode( executionTarget );
+                try {
+                    final Map<PhysicalNode, PreparedStatementInfos> prepareResult = down.prepareDataQuery( connection, statement, sql, maxRowCount, Collections.singleton( assignedNode ) );
+                    preparedStatements.put( executionTarget, prepareResult.get( assignedNode ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            }
+            throw we;
+        }
 
-
-    @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        return null;
+        return preparedStatements;
     }
 
 

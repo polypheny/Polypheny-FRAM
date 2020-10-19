@@ -14,31 +14,20 @@
  * limitations under the License.
  */
 
-package org.polypheny.fram;
+package org.polypheny.fram.protocols.fragmentation;
 
 
 import java.util.UUID;
-import org.jgroups.MembershipListener;
-import org.polypheny.fram.remote.AbstractLocalNode;
-import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.datadistribution.VirtualNode;
 
 
-/**
- *
- */
-public abstract class AbstractDistributionMeta implements MembershipListener {
+public class Fragment extends VirtualNode {
+
+    public Fragment() {
+    }
 
 
-    protected final AbstractLocalNode store;
-    protected final Catalog catalog;
-    public final UUID nodeId;
-
-
-    public AbstractDistributionMeta( final AbstractLocalNode localNode ) {
-        this.store = localNode;
-        this.catalog = localNode.getCatalog();
-        this.nodeId = this.catalog.getNodeId();
-
-        Cluster.getDefaultCluster().connect( localNode );
+    public Fragment( UUID id ) {
+        super( id );
     }
 }

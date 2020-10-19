@@ -65,4 +65,16 @@ public interface Meta extends org.apache.calcite.avatica.Meta {
      */
     ExecuteResult getGeneratedKeys( StatementHandle h, long maxRowCount, int maxRowsInFirstFrame )
             throws NoSuchStatementException;
+
+
+    interface Result {
+        // marker interface
+
+        ExecuteResult getGeneratedKeys();
+    }
+
+
+    interface Statement {
+        // marker interface
+    }
 }

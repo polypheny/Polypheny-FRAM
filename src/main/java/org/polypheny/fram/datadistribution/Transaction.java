@@ -65,7 +65,7 @@ public class Transaction implements Iterable<Action>, Serializable {
 
 
     public void addAction( final Operation operation, final RecordIdentifier record ) {
-        if ( operation == Operation.WRITE ) {
+        if ( operation.isWrite() ) {
             containsWriteOperation = true;
         }
         actions.add( new Action( operation, record ) );
@@ -125,8 +125,20 @@ public class Transaction implements Iterable<Action>, Serializable {
 
 
     public static enum Operation {
-        READ,
-        WRITE
+        SELECT,
+        INSERT,
+        UPDATE,
+        DELETE;
+
+
+        public boolean isRead() {
+            return this == SELECT;
+        }
+
+
+        public boolean isWrite() {
+            return this != SELECT;
+        }
     }
 
 

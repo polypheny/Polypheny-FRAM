@@ -17,9 +17,17 @@
 package org.polypheny.fram.protocols.replication;
 
 
+import java.util.UUID;
 import org.polypheny.fram.datadistribution.VirtualNode;
 
 
 public class Replica extends VirtualNode {
 
+    public Replica() {
+    }
+
+
+    public Replica( UUID id ) {
+        super( id );
+    }
 }

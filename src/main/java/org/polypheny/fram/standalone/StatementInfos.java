@@ -17,7 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import io.vavr.Function1;
 import io.vavr.Function4;
 import io.vavr.Function5;
 import java.sql.SQLFeatureNotSupportedException;
@@ -30,9 +29,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import lombok.EqualsAndHashCode;
-import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
@@ -43,11 +43,12 @@ import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.PhysicalNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
+import org.polypheny.fram.standalone.Meta.Result;
+import org.polypheny.fram.standalone.Meta.Statement;
+import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSet;
 import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 
 
@@ -55,14 +56,15 @@ import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
  * Represents a (Prepared)Statement
  */
 @EqualsAndHashCode(doNotUseGetters = true, onlyExplicitlyIncluded = true)
-public class StatementInfos {
+public class StatementInfos implements Statement {
 
     @EqualsAndHashCode.Include
     protected final ConnectionInfos connection;
     @EqualsAndHashCode.Include
     protected final StatementHandle statementHandle;
-    protected final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements = new LinkedHashMap<>();
-    protected final Map<RemoteStatementHandle, Set<AbstractRemoteNode>> remoteNodes = new LinkedHashMap<>();
+
+    protected final Map<Node, Statement> remoteStatements = new LinkedHashMap<>();
+    protected final Map<Statement, Set<Node>> remoteNodes = new LinkedHashMap<>();
     protected final int[] primaryKeyColumnIndexes;
     protected ResultSetInfos resultSetInfos;
 
@@ -94,8 +96,10 @@ public class StatementInfos {
     }
 
 
-    public RemoteStatementHandle getRemoteStatementHandle( final AbstractRemoteNode node ) {
-        return this.remoteStatements.get( node );
+    public Statement getRemoteStatementHandle( final AbstractRemoteNode node ) {
+        synchronized ( this.remoteStatements ) {
+            return this.remoteStatements.get( node );
+        }
     }
 
 
@@ -122,132 +126,178 @@ public class StatementInfos {
     }
 
 
-    public <NodeType extends Node> QueryResultSet createResultSet( NodeType origin, RemoteExecuteResult remoteResult ) {
+    public <NodeType extends Node, ResultType extends Result> QueryResultSet createResultSet( NodeType origin, ResultType remoteResult ) {
         synchronized ( this ) {
-            this.resultSetInfos = new QueryResultSet<NodeType>( this, origin, remoteResult );
+            this.resultSetInfos = new QueryResultSet<NodeType, ResultType>( this, origin, remoteResult );
             return (QueryResultSet) this.resultSetInfos;
         }
     }
 
 
-    public <NodeType extends Node> QueryResultSet createResultSet( Map<NodeType, RemoteExecuteResult> remoteResults, Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction ) {
-        return this.<NodeType>createResultSet( remoteResults, resultsMergeFunction, ( abstractRemoteNodeRemoteExecuteResultMap, connectionInfos, statementInfos, aLong, integer ) -> {
-            throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
-        } );
+    public <NodeType extends Node, ResultType extends Result> QueryResultSet createResultSet( Set<NodeType> sources, Supplier<ExecuteResult> executeResultSupplier, Supplier<ExecuteResult> generatedKeysSupplier ) {
+        return this.<NodeType, ResultType>createResultSet( sources, executeResultSupplier, generatedKeysSupplier,
+                ( _sources, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
+                    throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
+                } );
     }
 
 
-    public <NodeType extends Node> QueryResultSet createResultSet( Map<NodeType, RemoteExecuteResult> remoteResults, Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction, Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
+    public <NodeType extends Node, ResultType extends Result> QueryResultSet createResultSet( Set<NodeType> sources, Supplier<ExecuteResult> executeResultSupplier, Supplier<ExecuteResult> generatedKeysSupplier, Function5<Set<NodeType>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
         synchronized ( this ) {
-            this.resultSetInfos = new QueryResultSet<NodeType>( this, remoteResults, resultsMergeFunction, resultsFetchFunction );
+            this.resultSetInfos = new QueryResultSet<>( this, sources, executeResultSupplier, generatedKeysSupplier, resultsFetchFunction );
             return (QueryResultSet) this.resultSetInfos;
         }
     }
 
 
-    public <NodeType extends Node> BatchResultSetInfos createBatchResultSet( NodeType origin, RemoteExecuteBatchResult remoteBatchResult ) {
+    public <NodeType extends Node, ResultType extends Result> BatchResultSet createBatchResultSet( NodeType source, ResultType result ) {
         synchronized ( this ) {
-            this.resultSetInfos = new BatchResultSetInfos<NodeType>( this, origin, remoteBatchResult );
-            return (BatchResultSetInfos) this.resultSetInfos;
+            this.resultSetInfos = new BatchResultSet<>( this, source, result );
+            return (BatchResultSet) this.resultSetInfos;
         }
     }
 
 
-    public <NodeType extends Node> BatchResultSetInfos createBatchResultSet( Map<NodeType, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<NodeType, RemoteExecuteBatchResult>, ExecuteBatchResult> resultMergeFunction ) {
+    public <NodeType extends Node, ResultType extends Result> BatchResultSet createBatchResultSet( Set<NodeType> sources, Supplier<ExecuteBatchResult> executeBatchResultSupplier, Supplier<ExecuteResult> generatedKeysSupplier ) {
         synchronized ( this ) {
-            this.resultSetInfos = new BatchResultSetInfos<NodeType>( this, remoteBatchResults, resultMergeFunction );
-            return (BatchResultSetInfos) this.resultSetInfos;
+            this.resultSetInfos = new BatchResultSet<>( this, sources, executeBatchResultSupplier, generatedKeysSupplier );
+            return (BatchResultSet) this.resultSetInfos;
         }
     }
 
 
-    public void addAccessedNode( final AbstractRemoteNode node, RemoteStatementHandle remoteConnection ) {
-        this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( node, remoteConnection ) ) );
+    public void addAccessedNode( final PhysicalNode node ) {
+        this.addAccessedNode( node, this );
     }
 
 
-    public void addAccessedNode( final Entry<AbstractRemoteNode, RemoteStatementHandle> node ) {
+    public void addAccessedNode( final Node node, Statement statement ) {
+        this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( node, statement ) ) );
+    }
+
+
+    public void addAccessedNode( final Entry<? extends Node, ? extends Statement> node ) {
         this.addAccessedNodes( Collections.singleton( node ) );
     }
 
 
-    public void addAccessedNodes( final Collection<Entry<AbstractRemoteNode, RemoteStatementHandle>> nodes ) {
+    public void addAccessedNodes( final Collection<Entry<? extends Node, ? extends Statement>> nodes ) {
         nodes.forEach( node -> {
-            this.remoteStatements.put( node.getKey(), node.getValue() );
-            this.remoteNodes.compute( node.getValue(), ( handle, set ) -> {
-                if ( set == null ) {
-                    set = new HashSet<>();
-                }
-                set.add( node.getKey() );
-                return set;
-            } );
+            synchronized ( this.remoteStatements ) {
+                this.remoteStatements.put( node.getKey(), node.getValue() );
+            }
+            synchronized ( this.remoteNodes ) {
+                this.remoteNodes.compute( node.getValue(), ( handle, set ) -> {
+                    if ( set == null ) {
+                        set = new HashSet<>();
+                    }
+                    set.add( node.getKey() );
+                    return set;
+                } );
+            }
         } );
     }
 
 
-    public Collection<AbstractRemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( this.remoteStatements.keySet() );
+    public Collection<PhysicalNode> getAccessedPhysicalNodes() {
+        final Set<PhysicalNode> physicalNodes = new HashSet<>();
+        synchronized ( this.remoteStatements ) {
+            for ( Node node : this.remoteStatements.keySet() ) {
+                if ( node instanceof PhysicalNode ) {
+                    physicalNodes.add( (PhysicalNode) node );
+                }
+            }
+        }
+        return Collections.unmodifiableCollection( physicalNodes );
     }
 
 
     @EqualsAndHashCode(callSuper = true)
-    public class PreparedStatementInfos extends StatementInfos {
-
-        PreparedStatementInfos( final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
-            this( Collections.singletonMap( remoteNode, remoteStatement ), origins -> remoteStatement.toStatementHandle().signature );
-        }
-
-
-        PreparedStatementInfos( final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements, final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Meta.Signature> signatureMergeFunction ) {
-            this( remoteStatements, signatureMergeFunction, null, null );
-        }
-
+    public class PreparedStatementInfos<NodeType extends Node, StatementType extends Statement> extends StatementInfos {
 
         private final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction;
-        private final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction;
+        private final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction;
 
         private Function5<ConnectionInfos, TransactionInfos, StatementInfos, List, ResultSetInfos, Void> workloadAnalysisFunction;
 
 
-        public PreparedStatementInfos(
-                final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements,
-                final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
-                final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
-                final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction ) {
-            this( remoteStatements, signatureMergeFunction, executeFunction, executeBatchFunction, null );
+        PreparedStatementInfos( final NodeType remoteNode, final StatementType statement ) {
+            this( remoteNode, statement, null, null );
         }
 
 
-        public PreparedStatementInfos(
-                final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements,
-                final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
-                final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
-                final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction,
-                final int[] primaryKeyColumnIndexes ) {
+        PreparedStatementInfos( final Map<NodeType, StatementType> remoteStatements, final Supplier<Signature> signatureSupplier ) {
+            this( remoteStatements, signatureSupplier, null, null );
+        }
 
+
+        PreparedStatementInfos(
+                final NodeType remoteNode, final StatementType statement,
+                final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
+                final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction ) {
+            this( Collections.singletonMap( remoteNode, statement ), () -> {
+                if ( statement instanceof StatementHandle ) {
+                    return ((StatementHandle) statement).signature;
+                }
+                if ( statement instanceof RemoteStatementHandle ) {
+                    return ((RemoteStatementHandle) statement).toStatementHandle().signature;
+                }
+                if ( statement instanceof StatementInfos ) {
+                    return ((StatementInfos) statement).statementHandle.signature;
+                }
+                throw new IllegalArgumentException( "Type of statement is not of StatementHandle, RemoteStatementHandle, or StatementInfos." );
+            }, executeFunction, executeBatchFunction, null );
+        }
+
+
+        PreparedStatementInfos(
+                final Map<NodeType, StatementType> remoteStatements,
+                final Supplier<Signature> signatureSupplier,
+                final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
+                final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction ) {
+            this( remoteStatements, signatureSupplier, executeFunction, executeBatchFunction, null );
+        }
+
+
+        PreparedStatementInfos(
+                final Map<NodeType, StatementType> statements,
+                final Supplier<Signature> signatureSupplier,
+                final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
+                final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction,
+                final int[] primaryKeyColumnIndexes ) {
             super( StatementInfos.this.connection, StatementInfos.this.statementHandle, primaryKeyColumnIndexes );
 
-            remoteStatements.forEach( ( abstractRemoteNode, remoteStatementHandle ) -> {
-                this.remoteStatements.put( abstractRemoteNode, remoteStatementHandle );
-                this.remoteNodes.compute( remoteStatementHandle, ( sh, set ) -> {
-                    if ( set == null ) {
-                        set = new HashSet<>();
-                    }
-                    set.add( abstractRemoteNode );
-                    return set;
-                } );
-                this.connection.addAccessedNode( abstractRemoteNode, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( remoteStatementHandle.toStatementHandle().connectionId ) ) );
+            statements.forEach( ( node, statement ) -> {
+                synchronized ( this.remoteStatements ) {
+                    this.remoteStatements.put( node, statement );
+                }
+                synchronized ( this.remoteNodes ) {
+                    this.remoteNodes.compute( statement, ( sh, set ) -> {
+                        if ( set == null ) {
+                            set = new HashSet<>();
+                        }
+                        set.add( node );
+                        return set;
+                    } );
+                }
+                this.connection.addAccessedNode( node, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( Optional.ofNullable(
+                        statement instanceof StatementHandle ? ((StatementHandle) statement).connectionId :
+                                statement instanceof RemoteStatementHandle ? ((RemoteStatementHandle) statement).toStatementHandle().connectionId :
+                                        statement instanceof StatementInfos ? ((StatementInfos) statement).statementHandle.connectionId : null
+                ).orElseThrow( () -> new IllegalArgumentException( "Type of statement is not of StatementHandle, RemoteStatementHandle, or StatementInfos." ) ) ) ) );
             } );
 
-            this.statementHandle.signature = signatureMergeFunction.apply( remoteStatements );
+            this.statementHandle.signature = signatureSupplier.get();
 
             this.executeFunction = executeFunction;
             this.executeBatchFunction = executeBatchFunction;
         }
 
 
-        public Collection<AbstractRemoteNode> getExecutionTargets() {
-            return new LinkedList<>( this.remoteStatements.keySet() );
+        public Collection<Node> getExecutionTargets() {
+            synchronized ( this.remoteStatements ) {
+                return new LinkedList<>( this.remoteStatements.keySet() );
+            }
         }
 
 
@@ -256,7 +306,7 @@ public class StatementInfos {
         }
 
 
-        public BatchResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) {
+        public BatchResultSet executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) {
             return this.executeBatchFunction.apply( connection, transaction, statement, parameterValues );
         }
 

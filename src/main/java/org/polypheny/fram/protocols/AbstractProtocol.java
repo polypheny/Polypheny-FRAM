@@ -24,9 +24,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import org.apache.calcite.avatica.Meta.ConnectionHandle;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.apache.calcite.avatica.Meta.PrepareCallback;
@@ -41,15 +40,13 @@ import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
-import org.jgroups.Address;
 import org.jgroups.util.Rsp;
 import org.jgroups.util.RspList;
 import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.Cluster;
-import org.polypheny.fram.remote.ClusterUtils;
+import org.polypheny.fram.remote.PhysicalNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
@@ -90,12 +87,12 @@ public abstract class AbstractProtocol implements Protocol {
      */
 
 
-    protected List<AbstractRemoteNode> getAllNodes( final Cluster cluster ) {
+    protected Set<AbstractRemoteNode> getAllNodes( final Cluster cluster ) {
         return cluster.getMembers();
     }
 
 
-    public ResultSetInfos prepareAndExecute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+    public final ResultSetInfos prepareAndExecute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
         if ( sql.isA( SqlKind.DDL ) ) {
             /*
              * DataDefinition cannot be validated (for now?). That's why we branch off here.
@@ -120,24 +117,24 @@ public abstract class AbstractProtocol implements Protocol {
     }
 
 
-    public <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlSelect sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
         if ( sql.isA( SqlKind.DDL ) ) {
             /*
              * DataDefinition cannot be validated (for now?). That's why we branch off here.
              */
-            return (Map<NodeType, RemoteExecuteResult>) prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
+            return (Map<NodeType, ResultSetInfos>) prepareAndExecuteDataDefinition( connection, transaction, statement, sql, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
         }
         if ( sql.isA( SqlKind.DML ) ) {
             /*
              * Branching off DML statements (writing statements)
              */
-            return (Map<NodeType, RemoteExecuteResult>) prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
+            return (Map<NodeType, ResultSetInfos>) prepareAndExecuteDataManipulation( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
         }
         if ( sql.isA( SqlKind.QUERY ) ) {
             /*
              * Branching off QUERY statements (reading statements)
              */
-            return (Map<NodeType, RemoteExecuteResult>) prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
+            return (Map<NodeType, ResultSetInfos>) prepareAndExecuteDataQuery( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame, executionTargets );
         }
         throw Utils.wrapException(
                 new IllegalStateException( "Given SQL is none of DDL, DML, or QUERY." )
@@ -146,121 +143,128 @@ public abstract class AbstractProtocol implements Protocol {
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = this.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
-                this.getAllNodes( connection.getCluster() )
-        );
-
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException ex ) {
-                throw Utils.wrapException( ex );
-            }
-        } );
+    public final ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return this.prepareAndExecuteDataDefinition( connection, transaction, statement, sql, sql, maxRowCount, maxRowsInFirstFrame, callback );
     }
 
 
-    protected <NodeType extends Node> Map<AbstractRemoteNode, RemoteExecuteResult> prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-
-        final RspList<RemoteExecuteResult> responseList = connection.getCluster().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, sql, maxRowCount, maxRowsInFirstFrame,
-                (Collection<AbstractRemoteNode>) executionTargets
-        );
-
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = new HashMap<>();
-
-        for ( final Entry<Address, Rsp<RemoteExecuteResult>> responseEntry : responseList.entrySet() ) {
-            final AbstractRemoteNode remoteNode = connection.getCluster().getRemoteNode( responseEntry.getKey() );
-            final Rsp<RemoteExecuteResult> response = responseEntry.getValue();
-
-            if ( response.hasException() ) {
-                throw Utils.wrapException( response.getException() );
-            }
-
-            remoteResults.put( remoteNode, response.getValue() );
-            response.getValue().toExecuteResult().resultSets.forEach( resultSet -> {
-                connection.addAccessedNode( remoteNode, RemoteConnectionHandle.fromConnectionHandle( new ConnectionHandle( resultSet.connectionId ) ) );
-                statement.addAccessedNode( remoteNode, RemoteStatementHandle.fromStatementHandle( new StatementHandle( resultSet.connectionId, resultSet.statementId, resultSet.signature ) ) );
-            } );
-        }
-
-        return remoteResults;
+    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
-    @Override
-    public abstract ResultSetInfos prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    public abstract <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataDefinition( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final Set<NodeType> executionTargets ) throws RemoteException;
 
-    protected abstract <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<NodeType> executionTargets ) throws RemoteException;
 
     @Override
-    public abstract ResultSetInfos prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException;
+    public ResultSetInfos prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
+    }
 
-    protected abstract <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<NodeType> executionTargets ) throws RemoteException;
+
+    public abstract <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataManipulation( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Set<NodeType> executionTargets ) throws RemoteException;
+
+
+    @Override
+    public ResultSetInfos prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PrepareCallback callback ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
+    }
+
+
+    public abstract <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataQuery( final ConnectionInfos connection, final TransactionInfos transaction, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Set<NodeType> executionTargets ) throws RemoteException;
 
 
     @Override
     public ResultSetInfos prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
 
-        final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
+        final Set<PhysicalNode> accessedNodes = transaction.getAccessedNodes();
         LOGGER.trace( "prepareAndExecute[TransactionCommit] on {}", accessedNodes );
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
+        final Map<PhysicalNode, ResultSetInfos> remoteResults = this.prepareAndExecuteTransactionCommit( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
                 accessedNodes
         );
 
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
-            }
-        } );
+        return statement.createResultSet( remoteResults.keySet(),
+                /* executeResultSupplier */ () -> remoteResults.values().iterator().next().getExecuteResult(), // todo: merge the result of `COMMIT` properly
+                /* generatedKeysSupplier */ () -> remoteResults.values().iterator().next().getGeneratedKeys()
+        );
     }
 
 
-    public Map<AbstractRemoteNode, RemoteExecuteResult> prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
 
-        return ClusterUtils.getRemoteResults( connection.getCluster(),
-                connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame,
-                        executionTargets
-                )
-        );
+        final Map<NodeType, ResultSetInfos> results = new HashMap<>();
+        try {
+            executionTargets.parallelStream().forEach( ( executionTarget ) -> {
+                if ( !(executionTarget instanceof PhysicalNode) ) {
+                    throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                }
+                final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
+                try {
+                    results.put( executionTarget, statement.createResultSet( physicalNode, physicalNode.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), connection.getCluster().serializeSql( sql ), maxRowCount, maxRowsInFirstFrame ) ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
+
+        return results;
     }
 
 
     @Override
     public ResultSetInfos prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
 
-        final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
+        final Set<PhysicalNode> accessedNodes = transaction.getAccessedNodes();
         LOGGER.trace( "prepareAndExecute[TransactionRollback] on {}", accessedNodes );
 
-        final Map<AbstractRemoteNode, RemoteExecuteResult> remoteResults = prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
+        final Map<PhysicalNode, ResultSetInfos> remoteResults = this.prepareAndExecuteTransactionRollback( connection, transaction, statement, sql, maxRowCount, maxRowsInFirstFrame,
                 accessedNodes
         );
 
-        return statement.createResultSet( remoteResults, origins -> origins.entrySet().iterator().next().getValue().toExecuteResult(), ( origins, conn, stmt, offset, fetchMaxRowCount ) -> {
-            try {
-                return origins.entrySet().iterator().next().getKey().fetch( RemoteStatementHandle.fromStatementHandle( stmt.getStatementHandle() ), offset, fetchMaxRowCount ).toFrame();
-            } catch ( RemoteException e ) {
-                throw Utils.wrapException( e );
-            }
-        } );
-    }
-
-
-    public Map<AbstractRemoteNode, RemoteExecuteResult> prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-
-        return ClusterUtils.getRemoteResults( connection.getCluster(),
-                connection.getCluster().prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), sql, maxRowCount, maxRowsInFirstFrame,
-                        executionTargets
-                )
+        return statement.createResultSet( remoteResults.keySet(),
+                /* executeResultSupplier */ () -> remoteResults.values().iterator().next().getExecuteResult(), // todo: merge the result of `ROLLBACK` properly
+                /* generatedKeysSupplier */ () -> remoteResults.values().iterator().next().getGeneratedKeys()
         );
     }
 
 
-    public StatementInfos prepare( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, ResultSetInfos> results = new HashMap<>();
+        try {
+            executionTargets.parallelStream().forEach( ( executionTarget ) -> {
+                if ( !(executionTarget instanceof PhysicalNode) ) {
+                    throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                }
+                final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
+                try {
+                    results.put( executionTarget, statement.createResultSet( physicalNode, physicalNode.prepareAndExecute( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), connection.getCluster().serializeSql( sql ), maxRowCount, maxRowsInFirstFrame ) ) );
+                } catch ( RemoteException e ) {
+                    throw Utils.wrapException( e );
+                }
+            } );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
+
+        return results;
+    }
+
+
+    public final PreparedStatementInfos prepare( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
 
         if ( sql.isA( SqlKind.DDL ) ) {
             /*
@@ -286,7 +290,7 @@ public abstract class AbstractProtocol implements Protocol {
     }
 
 
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepare( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepare( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
 
         if ( sql.isA( SqlKind.DDL ) ) {
             /*
@@ -313,14 +317,21 @@ public abstract class AbstractProtocol implements Protocol {
 
 
     @Override
-    public abstract StatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    public PreparedStatementInfos prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
+    }
 
-    public abstract Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final Collection<AbstractRemoteNode> executionTargets ) throws RemoteException;
+
+    public abstract <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataManipulation( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final Set<NodeType> executionTargets ) throws RemoteException;
+
 
     @Override
-    public abstract StatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException;
+    public PreparedStatementInfos prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
+    }
 
-    public abstract Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final Collection<AbstractRemoteNode> executionTargets ) throws RemoteException;
+
+    public abstract <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataQuery( final ConnectionInfos connection, final StatementInfos statement, final SqlNode sql, final long maxRowCount, final Set<NodeType> executionTargets ) throws RemoteException;
 
 
     @Override
@@ -367,13 +378,13 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public Frame fetch( final ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet" );
+        throw new UnsupportedOperationException( "FETCH is not implemented yet." );
     }
 
 
     @Override
     public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
+        final Collection<PhysicalNode> accessedNodes = transaction.getAccessedNodes();
         LOGGER.trace( "commit on {}", accessedNodes );
 
         if ( transaction.requires2pc() ) {
@@ -401,7 +412,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-        final Collection<AbstractRemoteNode> accessedNodes = transaction.getAccessedNodes();
+        final Collection<PhysicalNode> accessedNodes = transaction.getAccessedNodes();
         LOGGER.trace( "rollback on {}", accessedNodes );
 
         connection.getCluster().rollback( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ), RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), accessedNodes );
@@ -410,7 +421,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
-        final Collection<AbstractRemoteNode> accessedNodes = statement.getAccessedNodes();
+        final Collection<PhysicalNode> accessedNodes = statement.getAccessedPhysicalNodes();
         LOGGER.trace( "closeStatement on {}", accessedNodes );
         connection.getCluster().closeStatement( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), accessedNodes );
     }
@@ -418,7 +429,7 @@ public abstract class AbstractProtocol implements Protocol {
 
     @Override
     public void closeConnection( ConnectionInfos connection ) throws RemoteException {
-        final Collection<AbstractRemoteNode> accessedNodes = connection.getAccessedNodes();
+        final Collection<PhysicalNode> accessedNodes = connection.getAccessedNodes();
         LOGGER.trace( "closeConnection on {}", accessedNodes );
         connection.getCluster().closeConnection( RemoteConnectionHandle.fromConnectionHandle( connection.getConnectionHandle() ), accessedNodes );
     }
@@ -439,7 +450,7 @@ public abstract class AbstractProtocol implements Protocol {
     @Override
     public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
 
-        Collection<AbstractRemoteNode> nodesWhichHaveOpenConnections = connection.getAccessedNodes();
+        Collection<PhysicalNode> nodesWhichHaveOpenConnections = connection.getAccessedNodes();
         if ( nodesWhichHaveOpenConnections == null ) {
             return null;
         }

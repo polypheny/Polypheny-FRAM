@@ -34,7 +34,7 @@ public class CatalogUtils {
     }
 
 
-    public static Map<String, Integer> lookupPrimaryKeyColumnNamesAndIndexes( final ConnectionInfos connection, final String catalogName, final String schemaName, final String tableName ) {
+    public static Map<String, Integer> lookupPrimaryKeyColumnsNamesAndIndexes( final ConnectionInfos connection, final String catalogName, final String schemaName, final String tableName ) {
         final Catalog catalog = connection.getCatalog();
 
         final List<String> primaryKeyColumnsNames = lookupPrimaryKeyColumnsNames( connection, catalogName, schemaName, tableName );
@@ -71,7 +71,7 @@ public class CatalogUtils {
     public static List<Integer> lookupPrimaryKeyColumnsIndexes( final ConnectionInfos connection, final String catalogName, final String schemaName, final String tableName ) {
         final Catalog catalog = connection.getCatalog();
 
-        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = lookupPrimaryKeyColumnNamesAndIndexes( connection, catalogName, schemaName, tableName );
+        final Map<String, Integer> primaryKeyColumnsNamesAndIndexes = lookupPrimaryKeyColumnsNamesAndIndexes( connection, catalogName, schemaName, tableName );
         List<Integer> primaryKeyColumnsIndexes = new ArrayList<>( primaryKeyColumnsNamesAndIndexes.values().size() );
         primaryKeyColumnsIndexes.addAll( primaryKeyColumnsNamesAndIndexes.values() );
         Collections.sort( primaryKeyColumnsIndexes );

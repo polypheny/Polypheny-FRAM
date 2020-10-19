@@ -17,31 +17,24 @@
 package org.polypheny.fram.protocols;
 
 
-import java.io.Serializable;
 import java.rmi.RemoteException;
-import java.util.Collection;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import org.apache.calcite.avatica.Meta.ConnectionProperties;
-import org.apache.calcite.avatica.Meta.Frame;
-import org.apache.calcite.avatica.Meta.PrepareCallback;
-import org.apache.calcite.avatica.Meta.Signature;
-import org.apache.calcite.avatica.Meta.StatementHandle;
-import org.apache.calcite.avatica.MissingResultsException;
-import org.apache.calcite.avatica.NoSuchStatementException;
-import org.apache.calcite.avatica.QueryState;
-import org.apache.calcite.avatica.proto.Common.TypedValue;
-import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
+import java.util.Set;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.SqlSelect;
 import org.polypheny.fram.Node;
-import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.remote.PhysicalNode;
+import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
+import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
+import org.polypheny.fram.standalone.Utils;
+import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
 /**
@@ -56,153 +49,263 @@ public class Executor extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public ConnectionProperties connectionSync( ConnectionInfos connection, ConnectionProperties newConnectionProperties ) throws RemoteException {
-        return null;
-    }
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
 
+        final Map<NodeType, ResultSetInfos> prepareAndExecuteResult = new LinkedHashMap<>();
 
-    @Override
-    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                        if ( !(executionTarget instanceof PhysicalNode) ) {
+                            throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                        }
+                        final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
 
+                        final RemoteExecuteResult executeResult;
+                        try {
+                            executeResult = physicalNode.prepareAndExecuteDataDefinition(
+                                    RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ),
+                                    RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ),
+                                    connection.getCluster().serializeSql( catalogSql ),
+                                    connection.getCluster().serializeSql( storeSql ),
+                                    maxRowCount,
+                                    maxRowsInFirstFrame
+                            );
+                            statement.addAccessedNode( physicalNode );
+                            connection.addAccessedNode( physicalNode );
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
 
-    @Override
-    public ResultSetInfos prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public ResultSetInfos prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public ResultSetInfos prepareAndExecuteTransactionCommit( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public ResultSetInfos prepareAndExecuteTransactionRollback( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
-
-        switch ( sql.getKind() ) {
-            // See org.apache.calcite.sql.SqlKind.QUERY
-            case SELECT:
-                return prepareDataQuerySelect( connection, statement, (SqlSelect) sql, maxRowCount );
-
-            case UNION:
-            case INTERSECT:
-            case EXCEPT:
-            case VALUES:
-            case WITH:
-            case ORDER_BY:
-            case EXPLICIT_TABLE:
-            default:
-                throw new UnsupportedOperationException( "Not supported." );
+                        prepareAndExecuteResult.put( executionTarget, statement.createResultSet( physicalNode, executeResult ) );
+                    }
+            );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
         }
 
+        return prepareAndExecuteResult;
     }
 
 
     @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        return null;
-    }
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
 
+        final Map<NodeType, ResultSetInfos> prepareAndExecuteResult = new LinkedHashMap<>();
 
-    protected StatementInfos prepareDataQuerySelect( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                        if ( !(executionTarget instanceof PhysicalNode) ) {
+                            throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                        }
+                        final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
 
+                        final RemoteExecuteResult executeResult;
+                        try {
+                            executeResult = physicalNode.prepareAndExecute(
+                                    RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ),
+                                    RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ),
+                                    connection.getCluster().serializeSql( sql ),
+                                    maxRowCount,
+                                    maxRowsInFirstFrame
+                            );
+                            statement.addAccessedNode( physicalNode );
+                            connection.addAccessedNode( physicalNode );
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
 
-    protected StatementInfos prepareDataQuerySelectAggregate( ConnectionInfos connection, StatementInfos statement, SqlSelect sql, long maxRowCount ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
-    }
+                        prepareAndExecuteResult.put( executionTarget, statement.createResultSet( physicalNode, executeResult ) );
+                    }
+            );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
 
-
-    @Override
-    public ResultSetInfos execute( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<TypedValue> parameterValues, int maxRowsInFirstFrame ) throws NoSuchStatementException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public ResultSetInfos executeBatch( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, List<UpdateBatch> parameterValues ) throws NoSuchStatementException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public Frame fetch( ConnectionInfos connection, StatementHandle statementHandle, long offset, int fetchMaxRowCount ) throws NoSuchStatementException, MissingResultsException, RemoteException {
-        return null;
-    }
-
-
-    @Override
-    public void commit( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public void rollback( ConnectionInfos connection, TransactionInfos transaction ) throws RemoteException {
-
-    }
-
-
-    @Override
-    public void closeStatement( ConnectionInfos connection, StatementInfos statement ) throws RemoteException {
-
+        return prepareAndExecuteResult;
     }
 
 
     @Override
-    public void closeConnection( ConnectionInfos connection ) throws RemoteException {
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
 
+        final Map<NodeType, ResultSetInfos> prepareAndExecuteResult = new LinkedHashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                        if ( !(executionTarget instanceof PhysicalNode) ) {
+                            throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                        }
+                        final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
+
+                        final RemoteExecuteResult executeResult;
+                        try {
+                            executeResult = physicalNode.prepareAndExecute(
+                                    RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ),
+                                    RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ),
+                                    connection.getCluster().serializeSql( sql ),
+                                    maxRowCount,
+                                    maxRowsInFirstFrame
+                            );
+                            statement.addAccessedNode( physicalNode );
+                            connection.addAccessedNode( physicalNode );
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
+
+                        prepareAndExecuteResult.put( executionTarget, statement.createResultSet( physicalNode, executeResult ) );
+                    }
+            );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
+
+        return prepareAndExecuteResult;
     }
 
 
     @Override
-    public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, PreparedStatementInfos> prepareResult = new LinkedHashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                        if ( !(executionTarget instanceof PhysicalNode) ) {
+                            throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                        }
+                        final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
+
+                        final RemoteStatementHandle preparedStatementHandle;
+                        try {
+                            preparedStatementHandle = physicalNode.prepare(
+                                    RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ),
+                                    connection.getCluster().serializeSql( sql ),
+                                    maxRowCount
+                            );
+                            statement.addAccessedNode( physicalNode );
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
+
+                        prepareResult.put( executionTarget, connection.createPreparedStatement( statement, physicalNode, preparedStatementHandle,
+                                //
+                                /* execute */ ( _connection, _transaction, _statement, _parameterValues, _maxRowsInFirstFrame ) -> {
+                                    //
+                                    final RemoteExecuteResult executeResult;
+                                    try {
+                                        executeResult = physicalNode.execute( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _parameterValues, _maxRowsInFirstFrame );
+                                        _statement.addAccessedNode( physicalNode );
+                                        _connection.addAccessedNode( physicalNode );
+                                    } catch ( RemoteException e ) {
+                                        throw Utils.wrapException( e );
+                                    }
+                                    return _statement.createResultSet( physicalNode, executeResult );
+                                },
+                                //
+                                /* executeBatch */ ( _connection, _transaction, _statement, _listOfUpdateBatches ) -> {
+                                    //
+                                    final RemoteExecuteBatchResult executeBatchResult;
+                                    try {
+                                        executeBatchResult = physicalNode.executeBatch( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _listOfUpdateBatches );
+                                        _statement.addAccessedNode( physicalNode );
+                                        _connection.addAccessedNode( physicalNode );
+                                    } catch ( RemoteException e ) {
+                                        throw Utils.wrapException( e );
+                                    }
+                                    return _statement.createBatchResultSet( physicalNode, executeBatchResult );
+                                } ) );
+                    }
+            );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
+
+        return prepareResult;
     }
 
 
     @Override
-    public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        return false;
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
+
+        final Map<NodeType, PreparedStatementInfos> prepareResult = new LinkedHashMap<>();
+
+        try {
+            executionTargets.parallelStream().forEach( executionTarget -> {
+                        if ( !(executionTarget instanceof PhysicalNode) ) {
+                            throw new IllegalArgumentException( "Type of executionTargets is not supported!" );
+                        }
+                        final PhysicalNode physicalNode = ((PhysicalNode) executionTarget);
+
+                        final RemoteStatementHandle preparedStatementHandle;
+                        try {
+                            preparedStatementHandle = physicalNode.prepare(
+                                    RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ),
+                                    connection.getCluster().serializeSql( sql ),
+                                    maxRowCount
+                            );
+                            statement.addAccessedNode( physicalNode );
+                        } catch ( RemoteException e ) {
+                            throw Utils.wrapException( e );
+                        }
+
+                        prepareResult.put( executionTarget, connection.createPreparedStatement( statement, physicalNode, preparedStatementHandle,
+                                //
+                                /* execute */ ( _connection, _transaction, _statement, _parameterValues, _maxRowsInFirstFrame ) -> {
+                                    //
+                                    final RemoteExecuteResult executeResult;
+                                    try {
+                                        executeResult = physicalNode.execute( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _parameterValues, _maxRowsInFirstFrame );
+                                        _statement.addAccessedNode( physicalNode );
+                                        _connection.addAccessedNode( physicalNode );
+                                    } catch ( RemoteException e ) {
+                                        throw Utils.wrapException( e );
+                                    }
+                                    return _statement.createResultSet( physicalNode, executeResult );
+                                },
+                                //
+                                /* executeBatch */ ( _connection, _transaction, _statement, _listOfUpdateBatches ) -> {
+                                    //
+                                    final RemoteExecuteBatchResult executeBatchResult;
+                                    try {
+                                        executeBatchResult = physicalNode.executeBatch( RemoteTransactionHandle.fromTransactionHandle( _transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( _statement.getStatementHandle() ), _listOfUpdateBatches );
+                                        _statement.addAccessedNode( physicalNode );
+                                        _connection.addAccessedNode( physicalNode );
+                                    } catch ( RemoteException e ) {
+                                        throw Utils.wrapException( e );
+                                    }
+                                    return _statement.createBatchResultSet( physicalNode, executeBatchResult );
+                                } ) );
+                    }
+            );
+        } catch ( WrappingException we ) {
+            final Throwable t = Utils.xtractException( we );
+            if ( t instanceof RemoteException ) {
+                throw (RemoteException) t;
+            } else {
+                throw we;
+            }
+        }
+
+        return prepareResult;
     }
 }

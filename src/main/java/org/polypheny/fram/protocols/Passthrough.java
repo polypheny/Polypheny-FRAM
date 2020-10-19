@@ -19,10 +19,9 @@ package org.polypheny.fram.protocols;
 
 import java.io.Serializable;
 import java.rmi.RemoteException;
-import java.util.Collection;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
 import org.apache.calcite.avatica.Meta.ConnectionProperties;
 import org.apache.calcite.avatica.Meta.Frame;
@@ -34,17 +33,15 @@ import org.apache.calcite.avatica.NoSuchStatementException;
 import org.apache.calcite.avatica.QueryState;
 import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
-import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.polypheny.fram.Node;
-import org.polypheny.fram.remote.AbstractRemoteNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
 import org.polypheny.fram.standalone.ConnectionInfos;
 import org.polypheny.fram.standalone.ResultSetInfos;
 import org.polypheny.fram.standalone.StatementInfos;
+import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.polypheny.fram.standalone.TransactionInfos;
 
 
@@ -64,14 +61,14 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
-        String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
-        if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
-            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
-            serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
-        }
+    public ResultSetInfos prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, final SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, PrepareCallback callback ) throws RemoteException {
+        return statement.createResultSet( connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), connection.getCluster().serializeSql( catalogSql ), connection.getCluster().serializeSql( storeSql ), maxRowCount, maxRowsInFirstFrame ) );
+    }
 
-        return statement.createResultSet( connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepareAndExecuteDataDefinition( RemoteTransactionHandle.fromTransactionHandle( transaction.getTransactionHandle() ), RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, serializedSql, maxRowCount, maxRowsInFirstFrame ) );
+
+    @Override
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataDefinition( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode catalogSql, SqlNode storeSql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
@@ -84,8 +81,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataManipulation( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
@@ -98,8 +95,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    protected <NodeType extends Node> Map<NodeType, RemoteExecuteResult> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Collection<NodeType> executionTargets ) throws RemoteException {
-        return null;
+    public <NodeType extends Node> Map<NodeType, ResultSetInfos> prepareAndExecuteDataQuery( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, SqlNode sql, long maxRowCount, int maxRowsInFirstFrame, Set<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
@@ -120,7 +117,7 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public StatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
         return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount ) );
@@ -128,13 +125,13 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataManipulation( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
     @Override
-    public StatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
+    public PreparedStatementInfos prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount ) throws RemoteException {
         String serializedSql = sql.toSqlString( connection.getCluster().getLocalNode().getSqlDialect() ).getSql();
 
         return connection.createPreparedStatement( statement, connection.getCluster().getLocalNode().asRemoteNode(), connection.getCluster().getLocalNode().prepare( RemoteStatementHandle.fromStatementHandle( statement.getStatementHandle() ), serializedSql, maxRowCount ) );
@@ -142,8 +139,8 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
 
     @Override
-    public Map<AbstractRemoteNode, RemoteStatementHandle> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Collection<AbstractRemoteNode> executionTargets ) throws RemoteException {
-        throw new UnsupportedOperationException( "Not implemented yet." );
+    public <NodeType extends Node> Map<NodeType, PreparedStatementInfos> prepareDataQuery( ConnectionInfos connection, StatementInfos statement, SqlNode sql, long maxRowCount, Set<NodeType> executionTargets ) throws RemoteException {
+        throw new UnsupportedOperationException( "Not supported." );
     }
 
 
@@ -191,12 +188,12 @@ public class Passthrough extends AbstractProtocol implements Protocol {
 
     @Override
     public Iterable<Serializable> createIterable( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, Signature signature, List<TypedValue> parameterValues, Frame firstFrame ) throws RemoteException {
-        throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 
 
     @Override
     public boolean syncResults( ConnectionInfos connection, TransactionInfos transaction, StatementInfos statement, QueryState state, long offset ) throws RemoteException {
-        throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException( "Not implemented yet." );
     }
 }

@@ -17,9 +17,9 @@
 package org.polypheny.fram.remote.types;
 
 
-import java.io.Serializable;
+import org.polypheny.fram.standalone.Meta.Result;
 
 
-public interface RemoteResult extends Serializable {
+public interface RemoteResult extends Result {
 
 }

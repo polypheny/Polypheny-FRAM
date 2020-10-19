@@ -28,9 +28,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,6 +74,9 @@ import org.jgroups.protocols.pbcast.STABLE;
 import org.jgroups.protocols.pbcast.STATE_TRANSFER;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.RspList;
+import org.polypheny.fram.protocols.allocation.AllocationSchema;
+import org.polypheny.fram.protocols.replication.Replica;
+import org.polypheny.fram.protocols.replication.ReplicationSchema;
 import org.polypheny.fram.remote.RemoteMeta.Method;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
@@ -79,6 +84,7 @@ import org.polypheny.fram.remote.types.RemoteExecuteResult;
 import org.polypheny.fram.remote.types.RemoteFrame;
 import org.polypheny.fram.remote.types.RemoteStatementHandle;
 import org.polypheny.fram.remote.types.RemoteTransactionHandle;
+import org.polypheny.fram.standalone.Main;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,7 +101,7 @@ public class Cluster implements MembershipListener {
     }
 
 
-    private static final Collection<AbstractRemoteNode> ALL_NODES_IN_THE_CLUSTER = null;
+    private static final Collection<PhysicalNode> ALL_NODES_IN_THE_CLUSTER = null;
 
     private static final Logger LOGGER = LoggerFactory.getLogger( Cluster.class );
 
@@ -142,10 +148,8 @@ public class Cluster implements MembershipListener {
     private final RpcDispatcher rpc;
     private static final RequestOptions DEFAULT_REQUEST_OPTIONS = RequestOptions.SYNC()
             .anycasting( true )
-            .setTimeout( TimeUnit.SECONDS.toMillis( 0 /* == infinite */ ) )
-            .setFlags( Flag.OOB )
-            .setFlags( Flag.DONT_BUNDLE )
-            .setFlags( Flag.RSVP );
+            .flags( Flag.OOB, Flag.DONT_BUNDLE, Flag.RSVP );
+    private final long requestTimeoutMillis;
 
     private final ConcurrentMap<Address, RemoteNode> currentNodes = new ConcurrentHashMap<>();
     private View currentView = null;
@@ -157,6 +161,7 @@ public class Cluster implements MembershipListener {
         this.clusterId = UUID.nameUUIDFromBytes( clusterName.getBytes( StandardCharsets.UTF_8 ) );
         this.clusterName = clusterName;
         this.clusterPort = clusterPort;
+        this.requestTimeoutMillis = TimeUnit.SECONDS.toMillis( Math.min( 0L, Main.configuration().getInt( "cluster.requestTimeout_seconds" ) ) );
         this.channel = createChannel( null /* == all interfaces */, clusterPort );
         this.rpc = createRpcDispatcher( this.channel );
 
@@ -172,13 +177,8 @@ public class Cluster implements MembershipListener {
     }
 
 
-    @Override
-    protected void finalize() throws Throwable {
-        try {
-            CLUSTER_REGISTRY.remove( this.clusterId );
-        } finally {
-            super.finalize();
-        }
+    public void removeClusterFromRegistry() {
+        CLUSTER_REGISTRY.remove( this.clusterId );
     }
 
 
@@ -241,6 +241,8 @@ public class Cluster implements MembershipListener {
             serverObject.setNodeAddress( this.clusterId, this.channel.getAddress() );
             this.thisNode = serverObject;
 
+            AllocationSchema.LOCAL_NODE = thisNode;
+
             return this;
         } catch ( Exception e ) {
             // Problems with the protocol stack
@@ -255,7 +257,7 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public PhysicalNode thisNode() {
+    public AbstractLocalNode thisNode() {
         if ( this.channel.isConnected() ) {
             return thisNode;
         }
@@ -297,7 +299,19 @@ public class Cluster implements MembershipListener {
         synchronized ( this.currentNodes ) {
             for ( Address newMember : newMembers ) {
                 LOGGER.info( "Node {} has joined.", newMember );
-                this.currentNodes.put( newMember, new RemoteNode( newMember, this ) );
+                final RemoteNode node = new RemoteNode( newMember, this );
+                this.currentNodes.put( newMember, node );
+
+                final Replica replica;
+                if ( newMember instanceof org.jgroups.util.UUID ) {
+                    org.jgroups.util.UUID newMemberAsUUID = (org.jgroups.util.UUID) newMember;
+                    replica = new Replica( new UUID( newMemberAsUUID.getMostSignificantBits(), newMemberAsUUID.getLeastSignificantBits() ) );
+                } else {
+                    throw new UnsupportedOperationException( "Not implemented yet." );
+                }
+
+                ReplicationSchema.ALL_REPLICAS.add( replica );
+                AllocationSchema.ALL_NODES.add( node );
             }
         }
     }
@@ -311,9 +325,30 @@ public class Cluster implements MembershipListener {
         synchronized ( this.currentNodes ) {
             for ( Address leftMember : leftMembers ) {
                 LOGGER.info( "Node {} has left.", leftMember );
-                this.currentNodes.remove( leftMember );
+                final RemoteNode node = this.currentNodes.remove( leftMember );
+
+                final Replica replica;
+                if ( leftMember instanceof org.jgroups.util.UUID ) {
+                    org.jgroups.util.UUID newMemberAsUUID = (org.jgroups.util.UUID) leftMember;
+                    replica = new Replica( new UUID( newMemberAsUUID.getMostSignificantBits(), newMemberAsUUID.getLeastSignificantBits() ) );
+                } else {
+                    throw new UnsupportedOperationException( "Not implemented yet." );
+                }
+
+                AllocationSchema.ALL_NODES.remove( node );
+                ReplicationSchema.ALL_REPLICAS.remove( replica );
             }
         }
+    }
+
+
+    public String serializeSql( SqlNode sql ) {
+        String serializedSql = sql.toSqlString( this.getLocalNode().getSqlDialect() ).getSql();
+        if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
+            // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
+            serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
+        }
+        return serializedSql;
     }
 
 
@@ -325,22 +360,22 @@ public class Cluster implements MembershipListener {
      */
 
 
-    protected <ReturnType> ReturnType callMethod( final MethodCall method, final AbstractRemoteNode remoteNode ) throws RemoteException {
-        return this.callMethod( DEFAULT_REQUEST_OPTIONS, method, remoteNode );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> ReturnType callMethod( final MethodCall method, final PhysicalNodeType physicalNode ) throws RemoteException {
+        return this.callMethod( DEFAULT_REQUEST_OPTIONS, method, physicalNode );
     }
 
 
-    protected <ReturnType> ReturnType callMethod( final RequestOptions requestOptions, final MethodCall method, final AbstractRemoteNode remoteNode ) throws RemoteException {
-        return this.doCallMethod( requestOptions, method, remoteNode == null ? null : remoteNode.getNodeAddress() );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> ReturnType callMethod( final RequestOptions requestOptions, final MethodCall method, final PhysicalNodeType physicalNode ) throws RemoteException {
+        return this.doCallMethod( requestOptions, method, physicalNode == null ? null : physicalNode.getNodeAddress() );
     }
 
 
-    private <ReturnType> ReturnType doCallMethod( final RequestOptions requestOptions, final MethodCall method, final Address remoteNodeAddress ) throws RemoteException {
-        LOGGER.trace( "doCallMethod( requestOptions: {}, method: {}, remoteNodeAddress: {} )", requestOptions, method, remoteNodeAddress );
+    private <ReturnType> ReturnType doCallMethod( final RequestOptions requestOptions, final MethodCall method, final Address physicalNodeAddress ) throws RemoteException {
+        LOGGER.trace( "doCallMethod( requestOptions: {}, method: {}, physicalNodeAddress: {} )", requestOptions, method, physicalNodeAddress );
 
         final ReturnType result;
         try {
-            result = this.rpc.callRemoteMethod( remoteNodeAddress, method, requestOptions );
+            result = this.rpc.callRemoteMethod( physicalNodeAddress, method, requestOptions.setTimeout( requestTimeoutMillis ) );
         } catch ( RemoteException | RuntimeException ex ) {
             LOGGER.debug( "re-throwing {}", ex );
             throw ex;
@@ -349,7 +384,7 @@ public class Cluster implements MembershipListener {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        LOGGER.trace( "doCallMethod( requestOptions: {}, method: {}, remoteNodeAddress: {} ) = {}", requestOptions, method, remoteNodeAddress, result );
+        LOGGER.trace( "doCallMethod( requestOptions: {}, method: {}, physicalNodeAddress: {} ) = {}", requestOptions, method, physicalNodeAddress, result );
         return result;
     }
 
@@ -359,13 +394,13 @@ public class Cluster implements MembershipListener {
      */
 
 
-    protected <ReturnType> CompletableFuture<ReturnType> asyncCallMethod( final MethodCall method, final AbstractRemoteNode remoteNode ) throws RemoteException {
-        return this.asyncCallMethod( DEFAULT_REQUEST_OPTIONS, method, remoteNode );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> CompletableFuture<ReturnType> asyncCallMethod( final MethodCall method, final PhysicalNodeType physicalNode ) throws RemoteException {
+        return this.asyncCallMethod( DEFAULT_REQUEST_OPTIONS, method, physicalNode );
     }
 
 
-    protected <ReturnType> CompletableFuture<ReturnType> asyncCallMethod( final RequestOptions requestOptions, final MethodCall method, final AbstractRemoteNode remoteNode ) throws RemoteException {
-        return this.doAsyncCallMethod( requestOptions, method, remoteNode == null ? null : remoteNode.getNodeAddress() );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> CompletableFuture<ReturnType> asyncCallMethod( final RequestOptions requestOptions, final MethodCall method, final PhysicalNodeType physicalNode ) throws RemoteException {
+        return this.doAsyncCallMethod( requestOptions, method, physicalNode == null ? null : physicalNode.getNodeAddress() );
     }
 
 
@@ -374,7 +409,7 @@ public class Cluster implements MembershipListener {
 
         final CompletableFuture<ReturnType> result;
         try {
-            result = this.rpc.callRemoteMethodWithFuture( remoteNodeAddress, method, requestOptions );
+            result = this.rpc.callRemoteMethodWithFuture( remoteNodeAddress, method, requestOptions.setTimeout( requestTimeoutMillis ) );
         } catch ( RemoteException | RuntimeException ex ) {
             LOGGER.debug( "re-throwing {}", ex );
             throw ex;
@@ -393,22 +428,22 @@ public class Cluster implements MembershipListener {
      */
 
 
-    protected <ReturnType> RspList<ReturnType> callMethods( final MethodCall method, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        return this.callMethods( DEFAULT_REQUEST_OPTIONS, method, remoteNodes );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> RspList<ReturnType> callMethods( final MethodCall method, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        return this.callMethods( DEFAULT_REQUEST_OPTIONS, method, physicalNodes );
     }
 
 
-    protected <ReturnType> RspList<ReturnType> callMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        return this.doCallMethods( requestOptions, method, remoteNodes == null ? null : remoteNodes.stream().map( AbstractRemoteNode::getNodeAddress ).collect( Collectors.toList() ) );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> RspList<ReturnType> callMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        return this.doCallMethods( requestOptions, method, physicalNodes == null ? null : physicalNodes.stream().map( PhysicalNode::getNodeAddress ).collect( Collectors.toList() ) );
     }
 
 
-    protected <ReturnType> RspList<ReturnType> doCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<Address> remoteNodeAddresses ) throws RemoteException {
-        LOGGER.trace( "doCallMethods( requestOptions: {}, method: {}, remoteNodeAddresses: {} )", requestOptions, method, remoteNodeAddresses == null ? "<CLUSTER>" : remoteNodeAddresses.stream().map( Object::toString ).collect( Collectors.joining( "," ) ) );
+    protected <ReturnType> RspList<ReturnType> doCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<Address> physicalNodeAddresses ) throws RemoteException {
+        LOGGER.trace( "doCallMethods( requestOptions: {}, method: {}, physicalNodeAddresses: {} )", requestOptions, method, physicalNodeAddresses == null ? "<CLUSTER>" : physicalNodeAddresses.stream().map( Object::toString ).collect( Collectors.joining( "," ) ) );
 
         final RspList<ReturnType> result;
         try {
-            result = this.rpc.callRemoteMethods( remoteNodeAddresses, method, requestOptions );
+            result = this.rpc.callRemoteMethods( physicalNodeAddresses, method, requestOptions.setTimeout( requestTimeoutMillis ) );
         } catch ( RemoteException | RuntimeException ex ) {
             LOGGER.debug( "re-throwing {}", ex );
             throw ex;
@@ -417,7 +452,7 @@ public class Cluster implements MembershipListener {
             throw new RemoteException( ex.getMessage(), ex );
         }
 
-        LOGGER.trace( "doCallMethods( requestOptions: {}, method: {}, remoteNodeAddresses: {} ) = {}", requestOptions, method, remoteNodeAddresses == null ? "<CLUSTER>" : remoteNodeAddresses.stream().map( Object::toString ).collect( Collectors.joining( "," ) ), result );
+        LOGGER.trace( "doCallMethods( requestOptions: {}, method: {}, physicalNodeAddresses: {} ) = {}", requestOptions, method, physicalNodeAddresses == null ? "<CLUSTER>" : physicalNodeAddresses.stream().map( Object::toString ).collect( Collectors.joining( "," ) ), result );
         return result;
     }
 
@@ -427,13 +462,13 @@ public class Cluster implements MembershipListener {
      */
 
 
-    protected <ReturnType> CompletableFuture<RspList<ReturnType>> asyncCallMethods( final MethodCall method, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        return this.asyncCallMethods( DEFAULT_REQUEST_OPTIONS, method, remoteNodes );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> CompletableFuture<RspList<ReturnType>> asyncCallMethods( final MethodCall method, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        return this.asyncCallMethods( DEFAULT_REQUEST_OPTIONS, method, physicalNodes );
     }
 
 
-    protected <ReturnType> CompletableFuture<RspList<ReturnType>> asyncCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        return this.doAsyncCallMethods( requestOptions, method, remoteNodes == null ? null : remoteNodes.stream().map( AbstractRemoteNode::getNodeAddress ).collect( Collectors.toList() ) );
+    protected <PhysicalNodeType extends PhysicalNode, ReturnType> CompletableFuture<RspList<ReturnType>> asyncCallMethods( final RequestOptions requestOptions, final MethodCall method, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        return this.doAsyncCallMethods( requestOptions, method, physicalNodes == null ? null : physicalNodes.stream().map( PhysicalNode::getNodeAddress ).collect( Collectors.toList() ) );
     }
 
 
@@ -442,7 +477,7 @@ public class Cluster implements MembershipListener {
 
         final CompletableFuture<RspList<ReturnType>> result;
         try {
-            result = this.rpc.callRemoteMethodsWithFuture( remoteNodeAddresses, method, requestOptions );
+            result = this.rpc.callRemoteMethodsWithFuture( remoteNodeAddresses, method, requestOptions.setTimeout( requestTimeoutMillis ) );
         } catch ( RemoteException | RuntimeException ex ) {
             LOGGER.debug( "re-throwing {}", ex );
             throw ex;
@@ -469,29 +504,31 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepare( remoteStatementHandle, sql, maxRowCount, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepare( remoteStatementHandle, sql, maxRowCount, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, remoteNodes: {} )", remoteStatementHandle, sql, maxRowCount, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, physicalNodes: {} )", remoteStatementHandle, sql, maxRowCount, physicalNodes );
 
-        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        final String serializedSql = serializeSql( sql );
         final RspList<RemoteStatementHandle> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-
-            LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, sql, maxRowCount, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepare( remoteStatementHandle, serializedSql, maxRowCount ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, sql, maxRowCount, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepare( remoteStatementHandle, serializedSql, maxRowCount ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepare( remoteStatementHandle, serializedSql, maxRowCount ) );
+            }
         } else {
-            result = this.callMethods( Method.prepare( remoteStatementHandle, serializedSql, maxRowCount ), remoteNodes );
+            result = this.callMethods( Method.prepare( remoteStatementHandle, serializedSql, maxRowCount ), physicalNodes );
         }
 
-        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, remoteNodes: {} ) = {}", remoteStatementHandle, sql, maxRowCount, remoteNodes, result );
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, physicalNodes: {} ) = {}", remoteStatementHandle, sql, maxRowCount, physicalNodes, result );
         return result;
     }
 
@@ -501,29 +538,31 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepare( remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepare( remoteStatementHandle, sql, maxRowCount, columnIndexes, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} )", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteStatementHandle> prepare( final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int[] columnIndexes, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, physicalNodes: {} )", remoteStatementHandle, sql, maxRowCount, columnIndexes, physicalNodes );
 
-        final String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        final String serializedSql = serializeSql( sql );
         final RspList<RemoteStatementHandle> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-
-            LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, sql, maxRowCount, columnIndexes, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ) );
+            }
         } else {
-            result = this.callMethods( Method.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ), remoteNodes );
+            result = this.callMethods( Method.prepare( remoteStatementHandle, serializedSql, maxRowCount, columnIndexes ), physicalNodes );
         }
 
-        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, remoteNodes: {} ) = {}", remoteStatementHandle, sql, maxRowCount, columnIndexes, remoteNodes, result );
+        LOGGER.trace( "prepare( remoteStatementHandle: {}, sql: {}, maxRowCount: {}, columnIndexes: {}, physicalNodes: {} ) = {}", remoteStatementHandle, sql, maxRowCount, columnIndexes, physicalNodes, result );
         return result;
     }
     //
@@ -534,27 +573,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Void> closeStatement( final RemoteStatementHandle remoteStatementHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.closeStatement( remoteStatementHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> closeStatement( final RemoteStatementHandle remoteStatementHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.closeStatement( remoteStatementHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Void> closeStatement( final RemoteStatementHandle remoteStatementHandle, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "closeStatement( remoteStatementHandle: {}, remoteNodes: {} )", remoteStatementHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> closeStatement( final RemoteStatementHandle remoteStatementHandle, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {}, physicalNodes: {} )", remoteStatementHandle, physicalNodes );
 
         final RspList<Void> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "closeStatement( remoteStatementHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.closeStatement( remoteStatementHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "closeStatement( remoteStatementHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.closeStatement( remoteStatementHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.closeStatement( remoteStatementHandle ) );
+            }
         } else {
-            result = this.callMethods( Method.closeStatement( remoteStatementHandle ), remoteNodes );
+            result = this.callMethods( Method.closeStatement( remoteStatementHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "closeStatement( remoteStatementHandle: {}, remoteNodes: {} ) = {}", remoteStatementHandle, remoteNodes, result );
+        LOGGER.trace( "closeStatement( remoteStatementHandle: {}, physicalNodes: {} ) = {}", remoteStatementHandle, physicalNodes, result );
         return result;
     }
 
@@ -569,15 +611,15 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, physicalNodes );
 
-        String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        String serializedSql = serializeSql( sql );
         if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
             // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
             serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
@@ -585,17 +627,20 @@ public class Cluster implements MembershipListener {
 
         final RspList<RemoteExecuteResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame ) );
+            }
         } else {
-            result = this.callMethods( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame ), remoteNodes );
+            result = this.callMethods( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame ), physicalNodes );
         }
 
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, remoteNodes, result );
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, physicalNodes, result );
         return result;
     }
 
@@ -605,15 +650,15 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode sql, final long maxRowCount, final int maxRowsInFirstFrame, final int[] columnIndexes, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, physicalNodes );
 
-        String serializedSql = sql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        String serializedSql = serializeSql( sql );
         if ( sql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
             // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
             serializedSql = serializedSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
@@ -621,17 +666,20 @@ public class Cluster implements MembershipListener {
 
         final RspList<RemoteExecuteResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ) );
+            }
         } else {
-            result = this.callMethods( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ), remoteNodes );
+            result = this.callMethods( Method.prepareAndExecute( remoteTransactionHandle, remoteStatementHandle, serializedSql, maxRowCount, maxRowsInFirstFrame, columnIndexes ), physicalNodes );
         }
 
-        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, remoteNodes, result );
+        LOGGER.trace( "prepareAndExecute( remoteTransactionHandle: {}, remoteStatementHandle: {}, sql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, columnIndexes: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sql, maxRowCount, maxRowsInFirstFrame, columnIndexes, physicalNodes, result );
         return result;
     }
 
@@ -646,20 +694,20 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> prepareAndExecuteDataDefinition( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final SqlNode catalogSql, final SqlNode storeSql, final long maxRowCount, final int maxRowsInFirstFrame, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, physicalNodes );
 
-        String serializedCatalogSql = catalogSql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        String serializedCatalogSql = serializeSql( catalogSql );
         if ( catalogSql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
             // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
             serializedCatalogSql = serializedCatalogSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
         }
-        String serializedStoreSql = storeSql.toSqlString( getLocalNode().getSqlDialect() ).getSql();
+        String serializedStoreSql = serializeSql( storeSql );
         if ( storeSql.isA( EnumSet.of( SqlKind.CREATE_TABLE, SqlKind.ALTER_TABLE ) ) ) {
             // HSQLDB does not accept an expression as DEFAULT value. The toSqlString method, however, creates an expression in parentheses. Thus, we have to "extract" the value.
             serializedStoreSql = serializedStoreSql.replaceAll( "DEFAULT \\(([^)]*)\\)", "DEFAULT $1" );  // search for everything between '(' and ')' which does not include a ')'. For now, this should cover most cases.
@@ -667,17 +715,20 @@ public class Cluster implements MembershipListener {
 
         final RspList<RemoteExecuteResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ) );
+            }
         } else {
-            result = this.callMethods( Method.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ), remoteNodes );
+            result = this.callMethods( Method.prepareAndExecuteDataDefinition( remoteTransactionHandle, remoteStatementHandle, serializedCatalogSql, serializedStoreSql, maxRowCount, maxRowsInFirstFrame ), physicalNodes );
         }
 
-        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, remoteNodes, result );
+        LOGGER.trace( "prepareAndExecuteDataDefinition( remoteTransactionHandle: {}, remoteStatementHandle: {}, catalogSql: {}, storeSql: {}, maxRowCount: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, catalogSql, storeSql, maxRowCount, maxRowsInFirstFrame, physicalNodes, result );
         return result;
     }
 
@@ -692,28 +743,31 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteBatchResult> prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<SqlNode> sqlCommands, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, sqlCommands, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteBatchResult> prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<SqlNode> sqlCommands, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, sqlCommands, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteBatchResult> prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<SqlNode> sqlCommands, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteBatchResult> prepareAndExecuteBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<SqlNode> sqlCommands, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, sqlCommands, physicalNodes );
 
-        List<String> serializedSqlCommands = sqlCommands.stream().map( sqlNode -> sqlNode.toSqlString( getLocalNode().getSqlDialect() ).getSql() ).collect( Collectors.toList() );
+        List<String> serializedSqlCommands = sqlCommands.stream().map( this::serializeSql ).collect( Collectors.toList() );
         final RspList<RemoteExecuteBatchResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sqlCommands, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, serializedSqlCommands ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, sqlCommands, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, serializedSqlCommands ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, serializedSqlCommands ) );
+            }
         } else {
-            result = this.callMethods( Method.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, serializedSqlCommands ), remoteNodes );
+            result = this.callMethods( Method.prepareAndExecuteBatch( remoteTransactionHandle, remoteStatementHandle, serializedSqlCommands ), physicalNodes );
         }
 
-        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, remoteNodes, result );
+        LOGGER.trace( "prepareAndExecuteBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, sqlCommands: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, sqlCommands, physicalNodes, result );
         return result;
     }
 
@@ -728,27 +782,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteBatchResult> executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteBatchResult> executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteBatchResult> executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteBatchResult> executeBatch( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<UpdateBatch> parameterValues, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, physicalNodes );
 
         final RspList<RemoteExecuteBatchResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, parameterValues, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, parameterValues, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ) );
+            }
         } else {
-            result = this.callMethods( Method.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ), remoteNodes );
+            result = this.callMethods( Method.executeBatch( remoteTransactionHandle, remoteStatementHandle, parameterValues ), physicalNodes );
         }
 
-        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, remoteNodes, result );
+        LOGGER.trace( "executeBatch( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, physicalNodes, result );
         return result;
     }
 
@@ -763,27 +820,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteFrame> fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.fetch( remoteStatementHandle, offset, fetchMaxRowCount, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteFrame> fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.fetch( remoteStatementHandle, offset, fetchMaxRowCount, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteFrame> fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, remoteNodes: {} )", remoteStatementHandle, offset, fetchMaxRowCount, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteFrame> fetch( final RemoteStatementHandle remoteStatementHandle, final long offset, final int fetchMaxRowCount, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, physicalNodes: {} )", remoteStatementHandle, offset, fetchMaxRowCount, physicalNodes );
 
         final RspList<RemoteFrame> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, offset, fetchMaxRowCount, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.fetch( remoteStatementHandle, offset, fetchMaxRowCount ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteStatementHandle, offset, fetchMaxRowCount, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.fetch( remoteStatementHandle, offset, fetchMaxRowCount ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.fetch( remoteStatementHandle, offset, fetchMaxRowCount ) );
+            }
         } else {
-            result = this.callMethods( Method.fetch( remoteStatementHandle, offset, fetchMaxRowCount ), remoteNodes );
+            result = this.callMethods( Method.fetch( remoteStatementHandle, offset, fetchMaxRowCount ), physicalNodes );
         }
 
-        LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, remoteNodes: {} ) = {}", remoteStatementHandle, offset, fetchMaxRowCount, remoteNodes, result );
+        LOGGER.trace( "fetch( remoteStatementHandle: {}, offset: {}, fetchMaxRowCount: {}, physicalNodes: {} ) = {}", remoteStatementHandle, offset, fetchMaxRowCount, physicalNodes, result );
         return result;
     }
 
@@ -798,27 +858,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<RemoteExecuteResult> execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<RemoteExecuteResult> execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, remoteNodes: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<RemoteExecuteResult> execute( final RemoteTransactionHandle remoteTransactionHandle, final RemoteStatementHandle remoteStatementHandle, final List<Common.TypedValue> parameterValues, final int maxRowsInFirstFrame, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, physicalNodes: {} )", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, physicalNodes );
 
         final RspList<RemoteExecuteResult> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ) );
+            }
         } else {
-            result = this.callMethods( Method.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ), remoteNodes );
+            result = this.callMethods( Method.execute( remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame ), physicalNodes );
         }
 
-        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, remoteNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, remoteNodes, result );
+        LOGGER.trace( "execute( remoteTransactionHandle: {}, remoteStatementHandle: {}, parameterValues: {}, maxRowsInFirstFrame: {}, physicalNodes: {} ) = {}", remoteTransactionHandle, remoteStatementHandle, parameterValues, maxRowsInFirstFrame, physicalNodes, result );
         return result;
     }
 
@@ -833,33 +896,31 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> onePhaseCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
 
         final RspList<Void> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
-        } else if ( remoteNodes != null && remoteNodes.size() == 1 ) {
-            final AbstractRemoteNode theNode = remoteNodes.iterator().next();
-            LOGGER.trace( "Calling commit( remoteConnectionHandle: {}, remoteTransactionHandle: {} ) on {}", remoteConnectionHandle, remoteTransactionHandle, theNode );
-            result = new RspList<>( 1 );
-            result.addRsp( theNode.getNodeAddress(), theNode.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            }
         } else {
             LOGGER.warn( "Executing a One Phase Commit on multiple nodes." );
-            result = this.callMethods( Method.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ), remoteNodes );
+            result = this.callMethods( Method.onePhaseCommit( remoteConnectionHandle, remoteTransactionHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, remoteNodes, result );
+        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, physicalNodes, result );
         return result;
     }
 
@@ -874,27 +935,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Boolean> prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.prepareCommit( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Boolean> prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.prepareCommit( remoteConnectionHandle, remoteTransactionHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Boolean> prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Boolean> prepareCommit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
 
         final RspList<Boolean> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ) );
+            }
         } else {
-            result = this.callMethods( Method.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ), remoteNodes );
+            result = this.callMethods( Method.prepareCommit( remoteConnectionHandle, remoteTransactionHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, remoteNodes, result );
+        LOGGER.trace( "prepareCommit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, physicalNodes, result );
         return result;
     }
 
@@ -909,27 +973,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Void> commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.commit( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.commit( remoteConnectionHandle, remoteTransactionHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Void> commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> commit( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
 
         final RspList<Void> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress( this ), thisNode.commit( remoteConnectionHandle, remoteTransactionHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.commit( remoteConnectionHandle, remoteTransactionHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.commit( remoteConnectionHandle, remoteTransactionHandle ) );
+            }
         } else {
-            result = this.callMethods( Method.commit( remoteConnectionHandle, remoteTransactionHandle ), remoteNodes );
+            result = this.callMethods( Method.commit( remoteConnectionHandle, remoteTransactionHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, remoteNodes, result );
+        LOGGER.trace( "commit( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, physicalNodes, result );
         return result;
     }
 
@@ -944,27 +1011,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Void> rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.rollback( remoteConnectionHandle, remoteTransactionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.rollback( remoteConnectionHandle, remoteTransactionHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Void> rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> rollback( final RemoteConnectionHandle remoteConnectionHandle, final RemoteTransactionHandle remoteTransactionHandle, Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} )", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
 
         final RspList<Void> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress(), thisNode.rollback( remoteConnectionHandle, remoteTransactionHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteTransactionHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.rollback( remoteConnectionHandle, remoteTransactionHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.rollback( remoteConnectionHandle, remoteTransactionHandle ) );
+            }
         } else {
-            result = this.callMethods( Method.rollback( remoteConnectionHandle, remoteTransactionHandle ), remoteNodes );
+            result = this.callMethods( Method.rollback( remoteConnectionHandle, remoteTransactionHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, remoteNodes, result );
+        LOGGER.trace( "rollback( remoteConnectionHandle: {}, remoteTransactionHandle: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, remoteTransactionHandle, physicalNodes, result );
         return result;
     }
 
@@ -979,27 +1049,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<ConnectionProperties> connectionSync( final RemoteConnectionHandle remoteConnectionHandle, final ConnectionProperties properties, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.connectionSync( remoteConnectionHandle, properties, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<ConnectionProperties> connectionSync( final RemoteConnectionHandle remoteConnectionHandle, final ConnectionProperties properties, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.connectionSync( remoteConnectionHandle, properties, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<ConnectionProperties> connectionSync( final RemoteConnectionHandle remoteConnectionHandle, final ConnectionProperties properties, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, remoteNodes: {} )", remoteConnectionHandle, properties, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<ConnectionProperties> connectionSync( final RemoteConnectionHandle remoteConnectionHandle, final ConnectionProperties properties, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, physicalNodes: {} )", remoteConnectionHandle, properties, physicalNodes );
 
         final RspList<ConnectionProperties> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, properties, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress(), thisNode.connectionSync( remoteConnectionHandle, properties ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, properties, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.connectionSync( remoteConnectionHandle, properties ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.connectionSync( remoteConnectionHandle, properties ) );
+            }
         } else {
-            result = this.callMethods( Method.connectionSync( remoteConnectionHandle, properties ), remoteNodes );
+            result = this.callMethods( Method.connectionSync( remoteConnectionHandle, properties ), physicalNodes );
         }
 
-        LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, properties, remoteNodes, result );
+        LOGGER.trace( "connectionSync( remoteConnectionHandle: {}, properties: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, properties, physicalNodes, result );
         return result;
     }
 
@@ -1011,27 +1084,30 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public RspList<Void> closeConnection( final RemoteConnectionHandle remoteConnectionHandle, final AbstractRemoteNode... remoteNodes ) throws RemoteException {
-        return this.closeConnection( remoteConnectionHandle, remoteNodes == null ? null : Arrays.asList( remoteNodes ) );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> closeConnection( final RemoteConnectionHandle remoteConnectionHandle, final PhysicalNodeType... physicalNodes ) throws RemoteException {
+        return this.closeConnection( remoteConnectionHandle, physicalNodes == null ? null : Arrays.asList( physicalNodes ) );
     }
 
 
-    public RspList<Void> closeConnection( final RemoteConnectionHandle remoteConnectionHandle, final Collection<AbstractRemoteNode> remoteNodes ) throws RemoteException {
-        LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, remoteNodes: {} )", remoteConnectionHandle, remoteNodes );
+    public <PhysicalNodeType extends PhysicalNode> RspList<Void> closeConnection( final RemoteConnectionHandle remoteConnectionHandle, final Collection<PhysicalNodeType> physicalNodes ) throws RemoteException {
+        LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, physicalNodes: {} )", remoteConnectionHandle, physicalNodes );
 
         final RspList<Void> result;
 
-        if ( remoteNodes != null && remoteNodes.size() == 1 &&
-                remoteNodes.iterator().next().cluster.equals( this ) &&
-                remoteNodes.iterator().next().address.equals( thisNode.getNodeAddress( this ) ) ) {
-            LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, remoteNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, remoteNodes );
+        if ( physicalNodes != null && physicalNodes.size() == 1 ) {
+            final PhysicalNode singleNode = physicalNodes.iterator().next();
             result = new RspList<>( 1 );
-            result.addRsp( thisNode.getNodeAddress(), thisNode.closeConnection( remoteConnectionHandle ) );
+            if ( singleNode.equals( thisNode ) ) {
+                LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, physicalNodes: {} ) -- Bypassing network stack for local call.", remoteConnectionHandle, physicalNodes );
+                result.addRsp( thisNode.getNodeAddress( this ), thisNode.closeConnection( remoteConnectionHandle ) );
+            } else {
+                result.addRsp( singleNode.getNodeAddress(), singleNode.closeConnection( remoteConnectionHandle ) );
+            }
         } else {
-            result = this.callMethods( Method.closeConnection( remoteConnectionHandle ), remoteNodes );
+            result = this.callMethods( Method.closeConnection( remoteConnectionHandle ), physicalNodes );
         }
 
-        LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, remoteNodes: {} ) = {}", remoteConnectionHandle, remoteNodes, result );
+        LOGGER.trace( "closeConnection( remoteConnectionHandle: {}, physicalNodes: {} ) = {}", remoteConnectionHandle, physicalNodes, result );
         return result;
     }
 
@@ -1070,13 +1146,13 @@ public class Cluster implements MembershipListener {
     }
 
 
-    public List<AbstractRemoteNode> getMembers() {
-        return Collections.unmodifiableList( this.currentView.getMembers().stream().map( address -> (AbstractRemoteNode) new RemoteNode( address, Cluster.this ) ).collect( Collectors.toList() ) );
+    public <PhysicalNodeType extends PhysicalNode> Set<PhysicalNodeType> getMembers() {
+        return new LinkedHashSet<>( this.currentView.getMembers().stream().map( address -> (PhysicalNodeType) new RemoteNode( address, Cluster.this ) ).collect( Collectors.toList() ) );
     }
 
 
-    public AbstractRemoteNode[] getMembersAsArray() {
-        return this.currentView.getMembers().stream().map( address -> (AbstractRemoteNode) new RemoteNode( address, Cluster.this ) ).toArray( AbstractRemoteNode[]::new );
+    public <PhysicalNodeType extends PhysicalNode> PhysicalNodeType[] getMembersAsArray() {
+        return (PhysicalNodeType[]) this.currentView.getMembers().stream().map( address -> (PhysicalNodeType) new RemoteNode( address, Cluster.this ) ).toArray( PhysicalNode[]::new );
     }
 
 

@@ -31,15 +31,15 @@ public class SqlDdlIndexNodes {
     /**
      * Creates a CREATE INDEX.
      */
-    public static SqlCreateIndex createIndex( SqlParserPos pos, SqlIdentifier indexName, SqlIdentifier tableName, SqlNodeList columns ) {
-        return new SqlCreateIndex( pos, indexName, tableName, columns );
+    public static SqlCreateIndex createIndex( SqlParserPos pos, boolean replace, boolean ifNotExists, SqlIdentifier indexName, SqlIdentifier tableName, SqlNodeList columns ) {
+        return new SqlCreateIndex( pos, replace, ifNotExists, indexName, tableName, columns );
     }
 
 
     /**
      * Creates a DROP INDEX.
      */
-    public static SqlDropIndex dropIndex( SqlParserPos pos, SqlIdentifier indexName, boolean ifExists ) {
-        return new SqlDropIndex( pos, indexName, ifExists );
+    public static SqlDropIndex dropIndex( SqlParserPos pos, boolean ifExists, SqlIdentifier indexName ) {
+        return new SqlDropIndex( pos, ifExists, indexName );
     }
 }

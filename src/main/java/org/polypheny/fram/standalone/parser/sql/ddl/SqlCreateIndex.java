@@ -45,8 +45,8 @@ public class SqlCreateIndex extends SqlCreate {
     private final SqlNodeList columns;
 
 
-    public SqlCreateIndex( SqlParserPos pos, SqlIdentifier indexName, SqlIdentifier tableName, SqlNodeList columns ) {
-        super( OPERATOR, pos, false, false );
+    public SqlCreateIndex( SqlParserPos pos, boolean replace, boolean ifNotExists, SqlIdentifier indexName, SqlIdentifier tableName, SqlNodeList columns ) {
+        super( OPERATOR, pos, replace, ifNotExists );
         this.indexName = Objects.requireNonNull( indexName );
         this.tableName = Objects.requireNonNull( tableName );
         this.columns = Objects.requireNonNull( columns );
@@ -57,6 +57,9 @@ public class SqlCreateIndex extends SqlCreate {
     public void unparse( SqlWriter writer, int leftPrec, int rightPrec ) {
         writer.keyword( "CREATE" );
         writer.keyword( "INDEX" );
+        if ( ifNotExists ) {
+            writer.keyword( "IF NOT EXISTS" );
+        }
         indexName.unparse( writer, leftPrec, rightPrec );
         writer.keyword( "ON" );
         tableName.unparse( writer, leftPrec, rightPrec );

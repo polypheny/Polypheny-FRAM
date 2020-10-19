@@ -17,7 +17,6 @@
 package org.polypheny.fram.standalone;
 
 
-import io.vavr.Function1;
 import io.vavr.Function4;
 import io.vavr.Function5;
 import java.sql.Connection;
@@ -32,6 +31,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import lombok.EqualsAndHashCode;
 import org.apache.calcite.avatica.ConnectionPropertiesImpl;
 import org.apache.calcite.avatica.Meta.ConnectionHandle;
@@ -42,11 +42,12 @@ import org.apache.calcite.avatica.proto.Common.TypedValue;
 import org.apache.calcite.avatica.proto.Requests.UpdateBatch;
 import org.apache.calcite.tools.Planner;
 import org.polypheny.fram.Catalog;
-import org.polypheny.fram.remote.AbstractRemoteNode;
+import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.Cluster;
+import org.polypheny.fram.remote.PhysicalNode;
 import org.polypheny.fram.remote.types.RemoteConnectionHandle;
-import org.polypheny.fram.remote.types.RemoteStatementHandle;
-import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSetInfos;
+import org.polypheny.fram.standalone.Meta.Statement;
+import org.polypheny.fram.standalone.ResultSetInfos.BatchResultSet;
 import org.polypheny.fram.standalone.ResultSetInfos.QueryResultSet;
 import org.polypheny.fram.standalone.StatementInfos.PreparedStatementInfos;
 import org.slf4j.Logger;
@@ -79,8 +80,8 @@ public class ConnectionInfos {
     @EqualsAndHashCode.Include
     final UUID connectionId;
 
-    private final Map<AbstractRemoteNode, RemoteConnectionHandle> remoteConnections = new LinkedHashMap<>();
-    private final Map<RemoteConnectionHandle, Set<AbstractRemoteNode>> remoteNodes = new LinkedHashMap<>();
+    private final Map<PhysicalNode, RemoteConnectionHandle> remoteConnections = new LinkedHashMap<>();
+    private final Map<RemoteConnectionHandle, Set<PhysicalNode>> remoteNodes = new LinkedHashMap<>();
 
     private Catalog catalog;
     private Cluster cluster;
@@ -148,23 +149,30 @@ public class ConnectionInfos {
 
 
     public StatementInfos createStatement() {
-        return new StatementInfos( this, new StatementHandle( this.connectionHandle.id, getNextStatementId(), null ) );
+        return new StatementInfos( this, new StatementHandle( this.connectionHandle.id, this.getNextStatementId(), null ) );
     }
 
 
     /**
      * This PreparedStatementInfos represents a only locally present prepared statement. Do not use this for distributed setups.
      */
-    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final AbstractRemoteNode remoteNode, final RemoteStatementHandle remoteStatement ) {
-        return statement.new PreparedStatementInfos( remoteNode, remoteStatement );
+    public <NodeType extends Node, StatementType extends Statement> PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final NodeType remoteNode, final StatementType remoteStatement ) {
+        return statement.new PreparedStatementInfos<>( remoteNode, remoteStatement );
     }
 
 
-    public PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<AbstractRemoteNode, RemoteStatementHandle> remoteStatements,
-            final Function1<Map<AbstractRemoteNode, RemoteStatementHandle>, Signature> signatureMergeFunction,
+    public <NodeType extends Node, StatementType extends Statement> PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final NodeType node, final StatementType preparedStatement,
             final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
-            final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSetInfos> executeBatchFunction ) {
-        return statement.new PreparedStatementInfos( remoteStatements, signatureMergeFunction, executeFunction, executeBatchFunction );
+            final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction ) {
+        return statement.new PreparedStatementInfos<>( node, preparedStatement, executeFunction, executeBatchFunction );
+    }
+
+
+    public <NodeType extends Node, StatementType extends Statement> PreparedStatementInfos createPreparedStatement( final StatementInfos statement, final Map<NodeType, StatementType> preparedStatements,
+            final Supplier<Signature> signatureSupplier,
+            final Function5<ConnectionInfos, TransactionInfos, StatementInfos, List<TypedValue>, Integer, QueryResultSet> executeFunction,
+            final Function4<ConnectionInfos, TransactionInfos, StatementInfos, List<UpdateBatch>, BatchResultSet> executeBatchFunction ) {
+        return statement.new PreparedStatementInfos<>( preparedStatements, signatureSupplier, executeFunction, executeBatchFunction );
     }
 
 
@@ -219,29 +227,42 @@ public class ConnectionInfos {
     }
 
 
-    public void addAccessedNode( final AbstractRemoteNode node, RemoteConnectionHandle remoteConnection ) {
-        this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( node, remoteConnection ) ) );
+    public void addAccessedNode( final PhysicalNode node ) {
+        this.addAccessedNode( node, RemoteConnectionHandle.fromConnectionHandle( this.connectionHandle ) );
     }
 
 
-    public void addAccessedNode( final Entry<AbstractRemoteNode, RemoteConnectionHandle> node ) {
+    public void addAccessedNode( final Node node, RemoteConnectionHandle remoteConnection ) {
+        if ( node instanceof PhysicalNode ) {
+            this.addAccessedNodes( Collections.singleton( new SimpleImmutableEntry<>( (PhysicalNode) node, remoteConnection ) ) );
+        } else {
+            return; // ignore the virtual node
+        }
+    }
+
+
+    public void addAccessedNode( final Entry<PhysicalNode, RemoteConnectionHandle> node ) {
         this.addAccessedNodes( Collections.singleton( node ) );
     }
 
 
-    public void addAccessedNodes( final Collection<Entry<AbstractRemoteNode, RemoteConnectionHandle>> nodes ) {
+    public void addAccessedNodes( final Collection<Entry<PhysicalNode, RemoteConnectionHandle>> nodes ) {
         nodes.forEach( entry -> {
-            final AbstractRemoteNode node = entry.getKey();
+            final PhysicalNode node = entry.getKey();
             final RemoteConnectionHandle rch = entry.getValue();
 
-            this.remoteConnections.put( node, rch );
-            this.remoteNodes.compute( rch, ( handle, set ) -> {
-                if ( set == null ) {
-                    set = new HashSet<>();
-                }
-                set.add( node );
-                return set;
-            } );
+            synchronized ( this.remoteConnections ) {
+                this.remoteConnections.put( node, rch );
+            }
+            synchronized ( this.remoteNodes ) {
+                this.remoteNodes.compute( rch, ( handle, set ) -> {
+                    if ( set == null ) {
+                        set = new HashSet<>();
+                    }
+                    set.add( node );
+                    return set;
+                } );
+            }
 
             if ( this.currentTransaction != null ) {
                 this.currentTransaction.addAccessedNode( node );
@@ -250,8 +271,10 @@ public class ConnectionInfos {
     }
 
 
-    public Collection<AbstractRemoteNode> getAccessedNodes() {
-        return Collections.unmodifiableCollection( remoteConnections.keySet() );
+    public Collection<PhysicalNode> getAccessedNodes() {
+        synchronized ( this.remoteConnections ) {
+            return Collections.unmodifiableCollection( new HashSet<>( remoteConnections.keySet() ) );
+        }
     }
 
 

@@ -17,26 +17,27 @@
 package org.polypheny.fram.standalone;
 
 
-import io.vavr.Function1;
 import io.vavr.Function5;
 import java.rmi.RemoteException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.function.Supplier;
 import org.apache.calcite.avatica.Meta.ExecuteBatchResult;
 import org.apache.calcite.avatica.Meta.ExecuteResult;
 import org.apache.calcite.avatica.Meta.Frame;
 import org.polypheny.fram.Node;
 import org.polypheny.fram.remote.types.RemoteExecuteBatchResult;
 import org.polypheny.fram.remote.types.RemoteExecuteResult;
-import org.polypheny.fram.remote.types.RemoteResult;
+import org.polypheny.fram.standalone.Meta.Result;
 import org.polypheny.fram.standalone.Utils.WrappingException;
 
 
-public abstract class ResultSetInfos {
+public abstract class ResultSetInfos implements Result {
 
-    private final StatementInfos statement;
+    protected final StatementInfos statement;
+    protected ExecuteResult generatedKeysResult;
 
 
     protected ResultSetInfos( StatementInfos statement ) {
@@ -44,10 +45,16 @@ public abstract class ResultSetInfos {
     }
 
 
-    public abstract <NodeType extends Node, RemoteResultType extends RemoteResult> Map<NodeType, RemoteResultType> getOrigins();
+    public abstract <NodeType extends Node> Set<NodeType> getSources();
 
 
     public abstract <ExecuteResultType> ExecuteResultType getExecuteResult();
+
+
+    @Override
+    public ExecuteResult getGeneratedKeys() {
+        return this.generatedKeysResult;
+    }
 
 
     public Frame fetch( ConnectionInfos connection, StatementInfos statement, long offset, int fetchMaxRowCount ) throws RemoteException {
@@ -55,44 +62,53 @@ public abstract class ResultSetInfos {
     }
 
 
-    public static class QueryResultSet<NodeType extends Node> extends ResultSetInfos {
+    public static class QueryResultSet<NodeType extends Node, ResultType extends Result> extends ResultSetInfos {
 
-        private final Map<NodeType, RemoteExecuteResult> origins;
+        private final Set<NodeType> sources;
         private final ExecuteResult executeResult;
-        private final Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
+        private final Function5<Set<NodeType>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction;
 
 
-        public QueryResultSet( StatementInfos statement, NodeType origin, RemoteExecuteResult remoteResult ) {
-            super( statement );
-
-            final Map<NodeType, RemoteExecuteResult> origins = new LinkedHashMap<>();
-            origins.put( origin, remoteResult );
-            this.origins = Collections.unmodifiableMap( origins );
-
-            this.executeResult = remoteResult.toExecuteResult();
-            this.resultsFetchFunction = ( _resultMap, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
-                throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
-            };
+        public QueryResultSet( StatementInfos statement, NodeType source, ResultType result ) {
+            this( statement, Collections.singleton( source ),
+                    () -> {
+                        if ( result instanceof ExecuteResult ) {
+                            return (ExecuteResult) result;
+                        }
+                        if ( result instanceof RemoteExecuteResult ) {
+                            return ((RemoteExecuteResult) result).toExecuteResult();
+                        }
+                        if ( result instanceof QueryResultSet ) {
+                            return ((QueryResultSet) result).getExecuteResult();
+                        }
+                        throw new IllegalArgumentException( "Type of result is not of ExecuteResult, RemoteExecuteResult, or QueryResultSet." );
+                    },
+                    () -> result.getGeneratedKeys(),
+                    ( _origins, _connection, _statement, _offset, _fetchMaxRowCount ) -> {
+                        throw Utils.wrapException( new SQLFeatureNotSupportedException( "Fetch is not supported." ) );
+                    } );
         }
 
 
-        public QueryResultSet( StatementInfos statement, Map<NodeType, RemoteExecuteResult> remoteResults,
-                Function1<Map<NodeType, RemoteExecuteResult>, ExecuteResult> resultsMergeFunction,
-                Function5<Map<NodeType, RemoteExecuteResult>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
+        public QueryResultSet( StatementInfos statement, Set<NodeType> sources,
+                Supplier<ExecuteResult> executeResultSupplier,
+                Supplier<ExecuteResult> generatedKeysSupplier,
+                Function5<Set<NodeType>, ConnectionInfos, StatementInfos, Long, Integer, Frame> resultsFetchFunction ) {
             super( statement );
 
-            final Map<NodeType, RemoteExecuteResult> origins = new LinkedHashMap<>();
-            origins.putAll( remoteResults );
-            this.origins = Collections.unmodifiableMap( origins );
+            final Set<NodeType> s = new LinkedHashSet<>();
+            s.addAll( s );
+            this.sources = Collections.unmodifiableSet( s );
 
-            this.executeResult = resultsMergeFunction.apply( this.origins );
+            this.executeResult = executeResultSupplier.get();
+            this.generatedKeysResult = generatedKeysSupplier.get();
             this.resultsFetchFunction = resultsFetchFunction;
         }
 
 
         @Override
-        public Map<NodeType, RemoteExecuteResult> getOrigins() {
-            return this.origins;
+        public Set<NodeType> getSources() {
+            return this.sources;
         }
 
 
@@ -105,49 +121,59 @@ public abstract class ResultSetInfos {
         @Override
         public Frame fetch( ConnectionInfos connection, StatementInfos statement, long offset, int fetchMaxRowCount ) throws RemoteException {
             try {
-                return resultsFetchFunction.apply( origins, connection, statement, offset, fetchMaxRowCount );
-            } catch ( WrappingException wrapper ) {
-                Throwable ex = Utils.xtractException( wrapper );
-                if ( ex instanceof RemoteException ) {
-                    throw (RemoteException) ex;
+                return resultsFetchFunction.apply( sources, connection, statement, offset, fetchMaxRowCount );
+            } catch ( WrappingException we ) {
+                Throwable t = Utils.xtractException( we );
+                if ( t instanceof RemoteException ) {
+                    throw (RemoteException) t;
                 }
-                throw Utils.wrapException( ex );
+                throw we;
             }
         }
     }
 
 
-    public static class BatchResultSetInfos<NodeType extends Node> extends ResultSetInfos {
+    public static class BatchResultSet<NodeType extends Node, ResultType extends Result> extends ResultSetInfos {
 
-        private final Map<NodeType, RemoteExecuteBatchResult> origins;
+        private final Set<NodeType> sources;
         private final ExecuteBatchResult executeBatchResult;
 
 
-        public BatchResultSetInfos( StatementInfos statement, NodeType origin, RemoteExecuteBatchResult remoteBatchResult ) {
-            super( statement );
-
-            final Map<NodeType, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
-            origins.put( origin, remoteBatchResult );
-            this.origins = Collections.unmodifiableMap( origins );
-
-            this.executeBatchResult = remoteBatchResult.toExecuteBatchResult();
+        public BatchResultSet( StatementInfos statement, NodeType source, ResultType result ) {
+            this( statement, Collections.singleton( source ),
+                    () -> {
+                        if ( result instanceof ExecuteBatchResult ) {
+                            return (ExecuteBatchResult) result;
+                        }
+                        if ( result instanceof RemoteExecuteBatchResult ) {
+                            return ((RemoteExecuteBatchResult) result).toExecuteBatchResult();
+                        }
+                        if ( result instanceof BatchResultSet ) {
+                            return ((BatchResultSet) result).getExecuteResult();
+                        }
+                        throw new IllegalArgumentException( "Type of result is not of ExecuteBatchResult, RemoteExecuteBatchResult, or BatchResultSet." );
+                    },
+                    () -> result.getGeneratedKeys() );
         }
 
 
-        public BatchResultSetInfos( StatementInfos statement, Map<NodeType, RemoteExecuteBatchResult> remoteBatchResults, Function1<Map<NodeType, RemoteExecuteBatchResult>, ExecuteBatchResult> batchResultsMergeFunction ) {
+        public BatchResultSet( StatementInfos statement, Set<NodeType> sources,
+                Supplier<ExecuteBatchResult> executeBatchResultSupplier,
+                Supplier<ExecuteResult> generatedKeysSupplier ) {
             super( statement );
 
-            final Map<NodeType, RemoteExecuteBatchResult> origins = new LinkedHashMap<>();
-            origins.putAll( remoteBatchResults );
-            this.origins = Collections.unmodifiableMap( origins );
+            final Set<NodeType> s = new LinkedHashSet<>();
+            s.addAll( sources );
+            this.sources = Collections.unmodifiableSet( s );
 
-            this.executeBatchResult = batchResultsMergeFunction.apply( this.origins );
+            this.executeBatchResult = executeBatchResultSupplier.get();
+            this.generatedKeysResult = generatedKeysSupplier.get();
         }
 
 
         @Override
-        public Map<NodeType, RemoteExecuteBatchResult> getOrigins() {
-            return this.origins;
+        public Set<NodeType> getSources() {
+            return this.sources;
         }
 
 

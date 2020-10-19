@@ -405,7 +405,7 @@ data: {
       "FILE"
       "ARCHIVE"
 # ### MODIFICATION START
-#      "INDEX"
+      "INDEX"
       "RENAME"
 # ### MODIFICATION END
     ]
@@ -445,7 +445,7 @@ data: {
     # Example: DateFunctionCall().
     builtinFunctionCallMethods: [
 # ### MODIFICATION START
-        "SqlUnnestCall()"
+#        "SqlUnnestCall()"
 # ### MODIFICATION END
     ]
 
