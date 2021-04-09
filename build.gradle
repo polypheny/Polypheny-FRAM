@@ -147,7 +147,7 @@ dependencies {
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     standaloneImplementation group: 'org.apache.calcite', name: 'calcite-server', version: calciteVersion
     // HSQLDB (BSD)
-    standaloneImplementation group: 'org.hsqldb', name: 'hsqldb', version: '2.5.0'
+    standaloneImplementation group: 'org.hsqldb', name: 'hsqldb', version: '2.6.0'
     // Log4j (Apache 2.0)
     standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: log4jVersion
     standaloneImplementation group: 'org.apache.logging.log4j', name: 'log4j-core', version: log4jVersion
