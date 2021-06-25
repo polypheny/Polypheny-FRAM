@@ -164,7 +164,7 @@ dependencies {
     implementation group: 'commons-transaction', name: 'commons-transaction', version: '1.2'
     implementation group: 'org.apache.commons', name: 'commons-collections4', version: '4.4'
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.10'
-    implementation group: 'commons-codec', name: 'commons-codec', version: '1.14'
+    implementation group: 'commons-codec', name: 'commons-codec', version: '1.15'
     // Google GUAVA (Apache 2.0)
     implementation group: 'com.google.guava', name: 'guava', version: '29.0-jre'
     // Byte Units (Apache 2.0)
