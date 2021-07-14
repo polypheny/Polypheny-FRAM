@@ -191,7 +191,7 @@ dependencies {
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion
     testImplementation group: 'org.apache.calcite', name: 'calcite-core', version: calciteVersion, classifier: 'tests'
     //
-    testImplementation group: 'org.polypheny', name: 'polypheny-jdbc-driver', version: '1.4-SNAPSHOT', changing: true /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
+    testImplementation group: 'org.polypheny', name: 'polypheny-jdbc-driver', version: '1.6-SNAPSHOT', changing: true /* Requires the repository https://nexus.dmi.unibas.ch/repository/maven2/ */
 
     //
     // ///// //// /// // /
