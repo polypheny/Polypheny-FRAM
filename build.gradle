@@ -172,7 +172,7 @@ dependencies {
     // Cluster Management, JGroups (Apache 2.0)
     implementation group: 'org.jgroups', name: 'jgroups', version: '4.0.20.Final' /* KEEP THIS VERSION */
     // Metrics, Micrometer Application Metrics (Apache 2.0)
-    implementation group: 'io.micrometer', name: 'micrometer-core', version: '1.5.1'
+    implementation group: 'io.micrometer', name: 'micrometer-core', version: '1.7.3'
     implementation group: 'io.micrometer', name: 'micrometer-registry-influx', version: '1.5.1'
     implementation group: 'io.micrometer', name: 'micrometer-registry-jmx', version: '1.5.1'
     implementation group: 'io.micrometer', name: 'micrometer-registry-prometheus', version: '1.5.1'
