@@ -166,7 +166,7 @@ dependencies {
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.10'
     implementation group: 'commons-codec', name: 'commons-codec', version: '1.14'
     // Google GUAVA (Apache 2.0)
-    implementation group: 'com.google.guava', name: 'guava', version: '29.0-jre'
+    implementation group: 'com.google.guava', name: 'guava', version: '31.0.1-jre'
     // Byte Units (Apache 2.0)
     implementation group: 'com.jakewharton.byteunits', name: 'byteunits', version: '0.9.1'
     // Cluster Management, JGroups (Apache 2.0)
